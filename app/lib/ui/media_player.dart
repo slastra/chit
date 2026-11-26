@@ -9,6 +9,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 import '../core/protocol.dart';
 import '../state/providers.dart';
 import 'attachments.dart';
+import 'expressive.dart';
 
 /// Material 3 Expressive icon button sizes (Compose's IconButton tokens:
 /// medium 56dp with a 24dp icon, large 96dp with a 32dp icon).
@@ -107,9 +108,11 @@ class CardAudio extends ConsumerWidget {
                       final ms = total.inMilliseconds;
                       return Row(
                         children: [
+                          // the wave travels while it plays, and rests on pause
                           Expanded(
-                            child: LinearProgressIndicator(
-                              value: ms == 0 ? null : (at.inMilliseconds / ms).clamp(0.0, 1.0),
+                            child: WavyProgress(
+                              value: ms == 0 ? 0 : (at.inMilliseconds / ms).clamp(0.0, 1.0),
+                              moving: playing,
                             ),
                           ),
                           const SizedBox(width: 8),

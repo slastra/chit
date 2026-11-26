@@ -19,11 +19,13 @@ import 'board_drag.dart';
 import 'check_motion.dart';
 import 'brand.dart';
 import 'create.dart';
+import 'expressive.dart';
 import 'feedback.dart';
 import 'labels_ui.dart';
 import 'note_colors.dart';
 import 'reminder_picker.dart';
 import 'masonry.dart';
+import 'nav_rail.dart';
 import 'note_card.dart';
 
 enum Shelf {
@@ -55,6 +57,9 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   /// The label shown, on the label shelf.
   String? _label;
+
+  /// On an expanded window, whether the rail is collapsed to its 96dp form.
+  bool _railCollapsed = false;
 
   /// The notes selected on the board, to act on together.
   final _selected = <String>{};
@@ -309,9 +314,18 @@ class _HomePageState extends ConsumerState<HomePage> {
     final wide = isExpanded(context);
     final theme = Theme.of(context);
     final firstSync = lib.notes.isEmpty && status?.phase != SyncPhase.online && status?.phase != SyncPhase.offline;
-    final margin = wide ? 24.0 : 16.0;
+    // Material's window size classes: compact below 600dp (navigation
+    // behind the menu button), medium to 840 (the collapsed rail), expanded
+    // from there (the expanded rail, which its menu button collapses)
+    final compact = MediaQuery.sizeOf(context).width < 600;
+    final expandedRail = wide && !_railCollapsed;
+    // margins: 16dp on compact windows, 24dp from medium up
+    final margin = compact ? 16.0 : 24.0;
+    // the expanded rail holds the new-note button; otherwise it floats
     final showFab =
-        !wide && _selected.isEmpty && (_shelf == Shelf.notes || _shelf == Shelf.reminders || _shelf == Shelf.labeled);
+        !expandedRail &&
+        _selected.isEmpty &&
+        (_shelf == Shelf.notes || _shelf == Shelf.reminders || _shelf == Shelf.labeled);
     // snackbars float above the compact FAB (56dp and its 16dp margin)
     snackbarClearance.value = showFab ? 56 + 16 : 0;
 
@@ -417,7 +431,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                   _ => 'Search ${_shelf.label.toLowerCase()}',
                 },
                 elevation: const WidgetStatePropertyAll(0),
-                leading: wide
+                leading: !compact
                     ? Padding(
                         padding: const EdgeInsets.all(8),
                         child: Icon(Icons.search, color: theme.colorScheme.onSurface),
@@ -431,9 +445,6 @@ class _HomePageState extends ConsumerState<HomePage> {
                 onChanged: (v) => setState(() => _query = v),
               ),
             ),
-            bottom: firstSync
-                ? const PreferredSize(preferredSize: Size.fromHeight(4), child: LinearProgressIndicator())
-                : null,
           ),
         SliverPadding(
           padding: EdgeInsets.fromLTRB(margin, 0, margin, 120),
@@ -443,7 +454,13 @@ class _HomePageState extends ConsumerState<HomePage> {
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 1600),
                 child: shown.isEmpty
-                    ? (firstSync ? const SizedBox.shrink() : _Empty(shelf: _shelf, searching: _query.trim().isNotEmpty))
+                    ? (firstSync
+                          // the first load: Material's loading indicator, where the notes will be
+                          ? const Padding(
+                              padding: EdgeInsets.only(top: 120),
+                              child: Center(child: LoadingIndicator(contained: true)),
+                            )
+                          : _Empty(shelf: _shelf, searching: _query.trim().isNotEmpty))
                     : grid,
               ),
             ),
@@ -454,12 +471,31 @@ class _HomePageState extends ConsumerState<HomePage> {
 
     final scaffold = Scaffold(
       key: _scaffold,
-      drawer: wide ? null : _Drawer(shelf: _shelf, label: _label, onPick: _pick),
+      // compact and medium: the expanded rail comes over the content
+      drawer: wide
+          ? null
+          : NavRail(
+              mode: RailMode.modal,
+              shelf: _shelf,
+              label: _label,
+              onPick: _pick,
+              onMenu: () => _scaffold.currentState?.closeDrawer(),
+            ),
       body: SafeArea(
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (wide) _Drawer(shelf: _shelf, label: _label, docked: true, onPick: _pick),
+            if (!compact)
+              NavRail(
+                mode: expandedRail ? RailMode.expanded : RailMode.collapsed,
+                shelf: _shelf,
+                label: _label,
+                onPick: _pick,
+                onMenu: wide
+                    ? () => setState(() => _railCollapsed = !_railCollapsed)
+                    : () => _scaffold.currentState?.openDrawer(),
+                footer: const Padding(padding: EdgeInsets.fromLTRB(20, 8, 20, 20), child: NewNoteSplitButton()),
+              ),
             Expanded(
               // files dropped on the board start a note of their own
               child: DropTarget(
@@ -476,8 +512,8 @@ class _HomePageState extends ConsumerState<HomePage> {
           ],
         ),
       ),
-      // Compact and medium: the FAB menu (Note, List, Link, Image). Expanded:
-      // the split button at the foot of the docked drawer.
+      // The FAB menu (Note, List, Link, Image), except beside the expanded
+      // rail, which has the split button at its foot.
       floatingActionButton: showFab ? const NewNoteFabMenu() : null,
     );
     // while selecting, Back and Escape clear it, Ctrl+A takes every note shown
@@ -682,87 +718,6 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 }
 
-/// The shelves. Docked beside the notes on an expanded screen, with the
-/// new-note split button at its foot; slid out from the menu button
-/// otherwise (the FAB menu creates notes there).
-class _Drawer extends ConsumerWidget {
-  const _Drawer({required this.shelf, required this.label, required this.onPick, this.docked = false});
-  final Shelf shelf;
-  final String? label;
-  final bool docked;
-  final void Function(Shelf shelf, [String? label]) onPick;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final labels = ref.watch(libraryProvider).value?.labels ?? const <Label>[];
-    // every destination in order: the shelves, each label, Edit labels (an
-    // action, never the selected one), then archive and trash
-    final entries = <({Shelf? shelf, String? label})>[
-      (shelf: Shelf.notes, label: null),
-      (shelf: Shelf.reminders, label: null),
-      for (final l in labels) (shelf: Shelf.labeled, label: l.id),
-      (shelf: null, label: null),
-      (shelf: Shelf.archive, label: null),
-      (shelf: Shelf.trash, label: null),
-    ];
-    final selected = entries.indexWhere((e) => e.shelf == shelf && e.label == (shelf == Shelf.labeled ? label : null));
-    NavigationDrawerDestination dest(Shelf s, [String? name]) => NavigationDrawerDestination(
-      icon: Icon(s.icon),
-      selectedIcon: Icon(s.selectedIcon),
-      label: Flexible(child: Text(name ?? s.label, overflow: TextOverflow.ellipsis)),
-    );
-    // Material's drawer section header and divider: title small in on
-    // surface variant, inset to the destinations' 28dp
-    Widget header(String text) => Padding(
-      padding: const EdgeInsets.fromLTRB(28, 16, 16, 10),
-      child: Text(text, style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-    );
-    const divider = Padding(padding: EdgeInsets.symmetric(horizontal: 28), child: Divider());
-    final drawer = NavigationDrawer(
-      selectedIndex: selected < 0 ? null : selected,
-      backgroundColor: docked ? theme.colorScheme.surface : null,
-      onDestinationSelected: (i) {
-        final e = entries[i];
-        if (!docked) Navigator.of(context).pop();
-        if (e.shelf == null) {
-          unawaited(showEditLabels(context));
-        } else {
-          onPick(e.shelf!, e.label);
-        }
-      },
-      children: [
-        header('chit'),
-        dest(Shelf.notes),
-        dest(Shelf.reminders),
-        divider,
-        if (labels.isNotEmpty) header('Labels'),
-        for (final l in labels) dest(Shelf.labeled, l.name),
-        NavigationDrawerDestination(
-          icon: Icon(labels.isEmpty ? Icons.new_label_outlined : Icons.edit_outlined),
-          label: Text(labels.isEmpty ? 'Create label' : 'Edit labels'),
-        ),
-        divider,
-        dest(Shelf.archive),
-        dest(Shelf.trash),
-      ],
-    );
-    if (!docked) return drawer;
-    return SizedBox(
-      width: 300,
-      child: Column(
-        children: [
-          Expanded(child: drawer),
-          ColoredBox(
-            color: theme.colorScheme.surface,
-            child: const Padding(padding: EdgeInsets.fromLTRB(16, 8, 16, 20), child: NewNoteSplitButton()),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 /// The account: an avatar in the search bar, with the account and sign-out
 /// in its menu.
 class _Account extends ConsumerWidget {
@@ -787,14 +742,23 @@ class _Account extends ConsumerWidget {
         ),
       ),
       menuChildren: [
-        MenuItemButton(
-          leadingIcon: const Icon(Icons.account_circle_outlined),
-          onPressed: null,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        // who is signed in, and where: a header, not something to press
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 16, 8),
+          child: Row(
             children: [
-              Text(name),
-              Text(Uri.parse(session.server).host, style: Theme.of(context).textTheme.bodySmall),
+              Icon(Icons.account_circle_outlined, size: 20, color: scheme.onSurfaceVariant),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(name, style: Theme.of(context).textTheme.titleSmall?.copyWith(color: scheme.onSurface)),
+                  Text(
+                    Uri.parse(session.server).host,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+                  ),
+                ],
+              ),
             ],
           ),
         ),

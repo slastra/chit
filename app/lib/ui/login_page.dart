@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import '../data/api.dart';
 import '../state/providers.dart';
 import 'brand.dart';
+import 'expressive.dart';
 
 class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({super.key});
@@ -123,12 +124,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                       textStyle: theme.textTheme.titleMedium,
                     ),
                     onPressed: _busy ? null : _signIn,
-                    child: _busy
-                        ? SizedBox.square(
-                            dimension: 24,
-                            child: CircularProgressIndicator(strokeWidth: 3, color: scheme.onPrimary),
-                          )
-                        : const Text('Sign in'),
+                    child: _busy ? const LoadingIndicator(size: 32) : const Text('Sign in'),
                   ),
                   const SizedBox(height: 8),
                   if (!_changeServer)

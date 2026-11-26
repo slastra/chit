@@ -68,7 +68,32 @@ ThemeData themeFor(ColorScheme scheme, [ThemeSpec? spec]) {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(shapes.extraLarge))),
     ),
     snackBarTheme: SnackBarThemeData(shape: shapes.rounded(shapes.extraSmall)),
-    menuTheme: MenuThemeData(style: MenuStyle(shape: WidgetStatePropertyAll(shapes.rounded(shapes.extraSmall)))),
+    // Material 3 Expressive's vertical menu (SegmentedMenuTokens): a large
+    // (16dp) container at level 2, 4dp inside it (on surface container, the
+    // baseline menu's tone: the Expressive surface container low all but
+    // vanishes on a black background, where shadows do not show);
+    // items 44dp tall with their own medium shape, 16dp from the menu's
+    // edge to their content, 20dp icons, body-large labels
+    menuTheme: MenuThemeData(
+      style: MenuStyle(
+        shape: WidgetStatePropertyAll(shapes.rounded(shapes.large)),
+        backgroundColor: WidgetStatePropertyAll(scheme.surfaceContainer),
+        elevation: const WidgetStatePropertyAll(3),
+        padding: const WidgetStatePropertyAll(EdgeInsets.all(4)),
+      ),
+    ),
+    menuButtonTheme: MenuButtonThemeData(
+      style: ButtonStyle(
+        shape: WidgetStatePropertyAll(shapes.rounded(shapes.medium)),
+        minimumSize: const WidgetStatePropertyAll(Size(112, 44)),
+        padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 12)),
+        iconSize: const WidgetStatePropertyAll(20),
+        // body large (16/24, +0.5), in the theme's own font
+        textStyle: WidgetStatePropertyAll(
+          TextStyle(fontFamily: spec?.font, fontSize: 16, height: 1.5, letterSpacing: 0.5, fontWeight: FontWeight.w400),
+        ),
+      ),
+    ),
     // top app bars: surface, and surface container once content scrolls
     // under them (the spec's on-scroll color, rather than a tint)
     appBarTheme: AppBarThemeData(

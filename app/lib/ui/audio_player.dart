@@ -10,6 +10,7 @@ import '../data/replica.dart';
 import '../state/providers.dart';
 import 'attachments.dart';
 import 'media_player.dart';
+import 'expressive.dart';
 
 /// The mini player's height, without its margin.
 const _miniHeight = 64.0;
@@ -168,9 +169,10 @@ class MiniPlayer extends ConsumerWidget {
                   const SizedBox(width: 4),
                 ],
               ),
+              // along the straight part of the foot, clear of the corners
               Positioned(
-                left: 0,
-                right: 0,
+                left: 16,
+                right: 16,
                 bottom: 0,
                 child: StreamBuilder(
                   stream: deck.player.stream.position,
@@ -323,7 +325,7 @@ class _FullPlayer extends ConsumerWidget {
   }
 }
 
-/// Playback speed as a segmented button: voice memos go faster at 1.5x.
+/// Playback speed as a connected button group: voice memos go faster at 1.5x.
 class _Speed extends StatelessWidget {
   const _Speed({required this.deck});
   final MediaDeck deck;
@@ -336,14 +338,12 @@ class _Speed extends StatelessWidget {
     initialData: deck.player.state.rate,
     builder: (context, rate) {
       final now = _rates.reduce((a, b) => ((rate.data ?? 1) - a).abs() <= ((rate.data ?? 1) - b).abs() ? a : b);
-      return SegmentedButton<double>(
-        showSelectedIcon: false,
-        segments: [
-          for (final r in _rates)
-            ButtonSegment(value: r, label: Text('${r == r.roundToDouble() ? r.toInt() : r}×'), tooltip: '$r times'),
-        ],
-        selected: {now},
-        onSelectionChanged: (s) => unawaited(deck.player.setRate(s.first)),
+      return ConnectedButtonGroup<double>(
+        values: _rates,
+        selected: now,
+        label: (r) => '${r == r.roundToDouble() ? r.toInt() : r}×',
+        tooltip: (r) => '${r == r.roundToDouble() ? r.toInt() : r} times speed',
+        onSelected: (r) => unawaited(deck.player.setRate(r)),
       );
     },
   );

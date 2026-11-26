@@ -26,6 +26,7 @@ import 'reminder_picker.dart';
 import 'share_sheet.dart';
 import 'feedback.dart';
 import 'theme.dart';
+import 'expressive.dart';
 
 /// One note, open or new. Edits save as you pause (and work offline). A new
 /// note only exists once something is typed; leaving one empty discards it,
@@ -381,6 +382,7 @@ class _NotePageState extends ConsumerState<NotePage> {
     final role = note == null ? Role.owner : roleOf(note, members, me);
     final editable = _editable = canEdit(role);
     final shared = members.isNotEmpty || !owned;
+    final roomy = widget.inDialog || MediaQuery.sizeOf(context).width >= 600;
     final reminder = !_exists ? _startReminder : (state.reminderDone ? null : reminderTime(state.reminder));
     final labels = _exists ? lib.labelsOf(_id) : lib.labels.where((l) => l.id == _defaults.label).toList();
     final trashed = note?.trashed.isNotEmpty ?? false;
@@ -485,8 +487,10 @@ class _NotePageState extends ConsumerState<NotePage> {
               ? IconButton(tooltip: 'Close', icon: const Icon(Icons.close), onPressed: () => context.pop())
               : null,
           actions: [
-            // the owner shares; anyone it is shared with sees with whom
-            if (_exists && note != null && (owned || shared))
+            // the owner shares; anyone it is shared with sees with whom. On
+            // compact windows the bar keeps three actions (Material's limit
+            // for a small app bar) and Share goes under More
+            if (roomy && _exists && note != null && (owned || shared))
               IconButton(
                 tooltip: owned ? (shared ? 'Shared: change who' : 'Share') : 'Shared with you',
                 icon: Icon(shared ? Icons.group_outlined : Icons.person_add_alt_outlined),
@@ -514,6 +518,12 @@ class _NotePageState extends ConsumerState<NotePage> {
                 onPressed: () => ctl.isOpen ? ctl.close() : ctl.open(),
               ),
               menuChildren: [
+                if (!roomy && _exists && note != null && (owned || shared))
+                  MenuItemButton(
+                    leadingIcon: Icon(shared ? Icons.group_outlined : Icons.person_add_alt_outlined),
+                    onPressed: () => showShareSheet(context, _id),
+                    child: Text(owned ? (shared ? 'Shared with' : 'Share') : 'Shared with you'),
+                  ),
                 // labels are the reader's own, viewers' too
                 if (!trashed)
                   MenuItemButton(
@@ -846,34 +856,30 @@ class _NoteBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final when = DateTime.tryParse(edited.replaceFirst(' ', 'T'))?.toLocal();
-    return BottomAppBar(
-      // inside a dialog it sits on the dialog's own container, as a dialog's
-      // actions do, rather than a darker band across its foot
-      color: inDialog ? theme.colorScheme.surface : theme.colorScheme.surfaceContainer,
-      elevation: 0,
-      height: 64,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        children: [
-          if (editable) ...[
-            IconButton(
-              tooltip: isList ? 'Turn into a note' : 'Turn into a checklist',
-              isSelected: isList,
-              icon: const Icon(Icons.check_box_outlined),
-              selectedIcon: const Icon(Icons.check_box),
-              onPressed: onToggleList,
-            ),
-            ColorButton(current: color, onPick: onColor),
-            AddButton(onPick: onAdd),
-          ],
-          const Spacer(),
-          if (when != null)
-            Text(
-              'Edited ${_when(context, when)}',
-              style: theme.textTheme.labelMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-            ),
+    // a docked toolbar (Material 3 Expressive's replacement for the bottom
+    // app bar). Inside a dialog it sits on the dialog's own container, as a
+    // dialog's actions do, rather than a darker band across its foot
+    return DockedToolbar(
+      color: inDialog ? theme.colorScheme.surface : null,
+      children: [
+        if (editable) ...[
+          IconButton(
+            tooltip: isList ? 'Turn into a note' : 'Turn into a checklist',
+            isSelected: isList,
+            icon: const Icon(Icons.check_box_outlined),
+            selectedIcon: const Icon(Icons.check_box),
+            onPressed: onToggleList,
+          ),
+          ColorButton(current: color, onPick: onColor),
+          AddButton(onPick: onAdd),
         ],
-      ),
+        const Spacer(),
+        if (when != null)
+          Text(
+            'Edited ${_when(context, when)}',
+            style: theme.textTheme.labelMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+      ],
     );
   }
 

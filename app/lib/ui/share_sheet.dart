@@ -12,6 +12,7 @@ import '../state/providers.dart';
 import 'feedback.dart';
 import 'home_page.dart' show isExpanded;
 import 'people.dart';
+import 'expressive.dart';
 
 /// Who a note is shared with, and (for its owner) adding people, changing
 /// their role, and removing them: a dialog on expanded windows, a bottom
@@ -77,9 +78,7 @@ class _ShareSheetState extends ConsumerState<_ShareSheet> {
     final others = people.where((p) => !onNote.contains(p.id)).toList();
     String you(String id) => id == me ? ' (you)' : '';
 
-    Widget busyOr(String id, Widget child) => _busy.contains(id)
-        ? const SizedBox.square(dimension: 24, child: CircularProgressIndicator(strokeWidth: 2.5))
-        : child;
+    Widget busyOr(String id, Widget child) => _busy.contains(id) ? const LoadingIndicator(size: 32) : child;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
