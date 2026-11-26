@@ -8,8 +8,8 @@ server-sent event stream. The desktop side is a small daemon built for
 [lastshell](https://github.com/slastra/lastshell), and the Android and Wear OS apps live in
 a separate repo.
 
-**Status:** early. The server runs with accounts and the note schema. The sync routes,
-`chitd`, and the apps are next.
+**Status:** early. The server and the `chit` CLI work end to end: notes, lists, sharing,
+and a live change feed. `chitd`, attachments, and the apps are next.
 
 ## Features
 
@@ -26,10 +26,13 @@ a separate repo.
 - Go 1.27 or newer
 
 ```sh
-go install github.com/slastra/chit/cmd/chit-server@latest
+go install github.com/slastra/chit/cmd/chit-server@latest   # the server
+go install github.com/slastra/chit/cmd/chit@latest          # the CLI
 ```
 
 ## Usage
+
+### Server
 
 ```sh
 chit-server serve --http=127.0.0.1:8090 --dir=./pb_data
@@ -38,6 +41,32 @@ chit-server version
 
 On first start, PocketBase prints a link for creating the first superuser. Accounts are
 invite-only: add them from the admin UI at `/_/`.
+
+### CLI
+
+```sh
+chit login https://chit.example.com      # asks for email and password
+chit new Groceries --list milk eggs      # a checklist
+chit new "Wifi" "the code is on the router"
+chit add groceries coffee
+chit check groceries milk                # --undo to uncheck
+chit show groceries
+chit ls                                  # --archived, --trashed
+chit pin groceries
+chit people
+chit share groceries angelica            # --viewer for read-only
+chit watch                               # live changes, Ctrl-C to stop
+```
+
+Notes, items and people are found by name: an exact match first, then a prefix, then a
+substring. When several match, chit lists them with their ids. Every command takes
+`--json`. Piped input works too: `printf 'socks\nshirts\n' | chit add packing`.
+
+## Configuration
+
+`chit login` saves the server, a session token and a device id to
+`~/.config/chit/config.json` (mode 600). `CHIT_SERVER` overrides the saved server. The
+token refreshes itself when it is within three days of expiring.
 
 ## How it works
 

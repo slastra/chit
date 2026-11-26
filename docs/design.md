@@ -56,13 +56,15 @@ Each checklist item is its own record, so concurrent check-offs never collide. O
 fractional index keys (`order`), so moving an item rewrites one field. Two offline edits
 to the same note body resolve to the later write.
 
-## Sync routes (planned)
+## Sync routes
 
-All routes need a user token (`Authorization: Bearer <token>` from PocketBase auth).
+All routes need a user token (`Authorization: <token>` from PocketBase auth) and live under
+`/api/chit`. Clients name their device with the `X-Chit-Device` header (or `?device=`), 1 to
+16 characters of `a-z0-9`. Wire types are in `internal/protocol`.
 
-### `POST /api/chit/ops`
+### `POST /ops`
 
-The body is a batch of ops:
+The body is a batch of ops, at most 1000:
 
 ```json
 {"device": "k3j9x2", "ops": [
@@ -70,38 +72,93 @@ The body is a batch of ops:
 ]}
 ```
 
-The server checks the caller may write each target (owner or `editor` member for shared
-collections, self for per-user ones), applies the ops that win, assigns each one a server
-sequence number, and appends it to the change log. The response returns the highest
-sequence number.
+Writable collections and fields:
 
-### `GET /api/chit/changes?since=N`
+| Collection | Fields | Who |
+|---|---|---|
+| `notes` | kind, title, body, color | owner, editors |
+| `notes` | trashed, deleted | owner |
+| `items` | note (on create only), text, checked, order, indent, deleted | owner, editors |
+| `labels` | name, deleted | the label's user |
+| `note_state` | pinned, archived, labels, reminder, reminder_done | anyone who can see the note, for themselves |
 
-Returns the changes after `N` that are visible to the caller. When a user is added to a
-note, the server appends a snapshot of that note to their feed, so a plain catch-up
-includes it.
+The first op on an unknown id creates the record, so a new note's ops carry `kind`, and a
+new item's ops carry `note`. Ops for `note_state` use the **note's id** as `id`: each user has
+one state row per note, and the server finds it.
 
-### `GET /api/chit/stream` (SSE)
+The whole batch runs in one transaction, but ops are judged one record at a time. Each op
+gets a result, in request order:
 
-The same feed, live. Each event's `id` is the sequence number. A client reconnects with
-`Last-Event-ID` and gets the replay, then live events.
+```json
+{"seq": 41, "results": [{"applied": true}, {"stale": true}, {"error": "only the owner can set trashed"}]}
+```
+
+`stale` means a newer write already holds the field, which is normal after offline edits.
+`error` means the op will never apply (bad field, bad value, no permission, an HLC more than
+10 minutes ahead of the server); the client drops it rather than retrying.
+
+### `GET /snapshot`
+
+Everything the caller can see as of `seq`: notes, items, members, the caller's state rows
+and labels. Deleted records are left out. Stateless clients (the CLI) read from this; a
+replica uses it for the first sync and after `reset`.
+
+### `GET /changes?since=N`
+
+The changes after `N` visible to the caller, at most 500, plus the next cursor and `more`.
+Visibility is checked against current membership. The caller's own device's changes are
+left out. A change is one of:
+
+| `kind` | Meaning |
+|---|---|
+| `set` | One field changed: `field`, `value`, `hlc` |
+| `record` | A whole record in `value`: sent on create, and to a new member for the shared note, its items and its members |
+| `remove` | A membership ended (`record` is the membership id) |
+| `revoke` | The reader lost access to note `record`; drop it locally |
+
+### `GET /stream` (SSE)
+
+The same feed, live. The cursor comes from `Last-Event-ID` on a reconnect, or `?since=`.
 
 ```
 id: 1234
-event: op
-data: {"collection":"items","id":"…","field":"checked","value":true,"hlc":"…","by":"…"}
+event: change
+data: {"seq":1234,"kind":"set","collection":"items","record":"…","field":"checked","value":true,"hlc":"…","by":"…"}
+
+id: 1240
+event: cursor
+data: {}
 
 : ping
-
-event: reset
-data: {}
 ```
 
-- `: ping` every 45 to 60 s. A client that misses two treats the stream as dead and
-  reconnects.
-- `reset` means `Last-Event-ID` is older than the compacted log. The client then does a
-  full resync.
-- The device that sent an op does not get it echoed back.
+- `cursor` moves the client's `Last-Event-ID` past rows it cannot see, so a reconnect does
+  not rescan them.
+- `: ping` every 50 s. A client that hears nothing for two pings treats the stream as dead
+  and reconnects.
+- After each write the server wakes every open stream, and each re-reads the feed from its
+  own cursor, so the stream and `/changes` share one visibility check.
+- Leaving out the device header gets every change, the caller's own included. `chit watch`
+  does this.
+- Planned: a `reset` event once old changes are compacted.
+
+### Sharing
+
+- `POST /notes/{id}/members` with `{"user": "…", "role": "editor" | "viewer"}`: owner only.
+  Adds the member or changes their role. A new member's feed gets the note, its items and
+  its members as `record` changes first.
+- `DELETE /notes/{id}/members/{user}`: the owner removes anyone, or a member removes
+  themselves. The member's own state row for the note is deleted, and they get `revoke`.
+
+Any signed-in user can list the accounts on the instance
+(`GET /api/collections/users/records`), to pick who to share with.
+
+## Attachments (planned)
+
+An `attachments` collection (note, file, name, size, type, deleted) using PocketBase file
+storage on disk or R2. Uploads go through a chit route that checks edit access; downloads
+use PocketBase protected files with short-lived file tokens, readable by anyone who can see
+the note. Creating or removing one is a normal `record` or `set` change.
 
 ## Notifications
 

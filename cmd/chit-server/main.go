@@ -11,6 +11,7 @@ import (
 	"github.com/pocketbase/pocketbase/plugins/migratecmd"
 	"github.com/spf13/cobra"
 
+	"github.com/slastra/chit/internal/server"
 	_ "github.com/slastra/chit/migrations"
 )
 
@@ -20,6 +21,8 @@ func main() {
 	// Schema lives in Go migrations. Automigrate stays off so edits made in
 	// the admin UI never write migration files on the server.
 	migratecmd.MustRegister(app, app.RootCmd, migratecmd.Config{Automigrate: false})
+
+	server.Register(app)
 
 	app.RootCmd.AddCommand(&cobra.Command{
 		Use:   "version",
