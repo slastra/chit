@@ -1,0 +1,37 @@
+import 'package:material_ui/material_ui.dart';
+
+/// chit's seed when the platform has no wallpaper colors (desktop, web).
+const seed = Color(0xFF4F7CAC);
+
+/// Material 3 Expressive wherever material_ui has it: the Expressive color
+/// scheme variant, Expressive icon buttons and buttons, and the forward-fade
+/// page transition. The rest is standard Material 3.
+ThemeData buildTheme(ColorScheme? dynamicScheme, Brightness brightness) => themeFor(
+  dynamicScheme?.harmonized(brightness) ??
+      ColorScheme.fromSeed(seedColor: seed, brightness: brightness, dynamicSchemeVariant: DynamicSchemeVariant.expressive),
+);
+
+/// The app's theme around any scheme (a note's page uses its color's). Built
+/// whole, not copied: a copied theme keeps its old text colors.
+ThemeData themeFor(ColorScheme scheme) {
+  const expressive = StyleVariant.material3Expressive;
+  return ThemeData(
+    colorScheme: scheme,
+    iconButtonTheme: const IconButtonThemeData(variant: expressive),
+    elevatedButtonTheme: const ElevatedButtonThemeData(variant: expressive),
+    pageTransitionsTheme: PageTransitionsTheme(
+      builders: {
+        for (final p in TargetPlatform.values) p: const FadeForwardsPageTransitionsBuilder(),
+      },
+    ),
+    inputDecorationTheme: const InputDecorationTheme(border: InputBorder.none),
+    cardTheme: const CardThemeData(margin: EdgeInsets.zero, clipBehavior: Clip.antiAlias),
+  );
+}
+
+extension on ColorScheme {
+  /// A wallpaper scheme rebuilt with the Expressive variant, so Android's
+  /// colors keep the same character as the seed scheme.
+  ColorScheme harmonized(Brightness b) =>
+      ColorScheme.fromSeed(seedColor: primary, brightness: b, dynamicSchemeVariant: DynamicSchemeVariant.expressive);
+}
