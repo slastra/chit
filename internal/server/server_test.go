@@ -388,3 +388,22 @@ func TestStreamCursorSkipsInvisibleRows(t *testing.T) {
 		t.Fatalf("eve = %+v, want no changes and the cursor moved to the head", got)
 	}
 }
+
+func TestReplayedBatchIsStaleNotAnError(t *testing.T) {
+	e := newEnv(t)
+	shaun := e.device(e.user("shaun"), "desk")
+	note := newID()
+	item := newID()
+	batch := []protocol.Op{
+		op(protocol.Notes, note, "kind", "list", shaun.clock.Now()),
+		op(protocol.Items, item, "note", note, shaun.clock.Now()),
+		op(protocol.Items, item, "text", "milk", shaun.clock.Now()),
+	}
+	shaun.mustApply(batch...)
+	// the same batch again, as after a lost response
+	for i, r := range shaun.send(batch...).Results {
+		if r.Applied || !r.Stale || r.Error != "" {
+			t.Errorf("replayed op %d = %+v, want stale", i, r)
+		}
+	}
+}

@@ -206,6 +206,14 @@ func applyGroup(tx core.App, me *core.Record, device string, ops []protocol.Op, 
 	for _, i := range live {
 		op := ops[i]
 		f := spec[op.Field]
+		// stale first: a client resending a batch whose answer it lost (or
+		// two of its isolates both flushing) gets "stale", which it acks,
+		// rather than a create-only or owner-only error that makes it
+		// reload everything
+		if op.HLC <= clocks[op.Field] {
+			results[i].Stale = true
+			continue
+		}
 		if f.create && !created {
 			results[i].Error = fmt.Sprintf("%s cannot change after the record exists", op.Field)
 			continue
@@ -230,10 +238,6 @@ func applyGroup(tx core.App, me *core.Record, device string, ops []protocol.Op, 
 				results[i].Error = msg
 				continue
 			}
-		}
-		if op.HLC <= clocks[op.Field] {
-			results[i].Stale = true
-			continue
 		}
 		rec.Set(op.Field, values[i])
 		clocks[op.Field] = op.HLC
