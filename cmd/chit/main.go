@@ -286,7 +286,7 @@ func lsCmd() *cobra.Command {
 	var archived, trashed bool
 	cmd := &cobra.Command{
 		Use:   "ls",
-		Short: "List notes, pinned first",
+		Short: "List notes in board order (pinned first)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
@@ -306,12 +306,9 @@ func lsCmd() *cobra.Command {
 				}
 				shown = append(shown, n)
 			}
+			// the board's order: pinned first, then where you put them
 			sort.SliceStable(shown, func(i, j int) bool {
-				pi, pj := notes.StateOf(snap, shown[i].ID).Pinned, notes.StateOf(snap, shown[j].ID).Pinned
-				if pi != pj {
-					return pi
-				}
-				return shown[i].Updated > shown[j].Updated
+				return notes.BoardBefore(shown[i], shown[j], notes.StateOf(snap, shown[i].ID), notes.StateOf(snap, shown[j].ID))
 			})
 			if jsonOut {
 				return printJSON(shown)
@@ -682,7 +679,8 @@ func pinCmd(pin bool) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return s.send(ctx, s.op(protocol.NoteState, n.ID, "pinned", pin))
+			// a note changing sections lands on top of its new one
+			return s.send(ctx, s.op(protocol.NoteState, n.ID, "pinned", pin), s.op(protocol.NoteState, n.ID, "order", ""))
 		},
 	}
 }

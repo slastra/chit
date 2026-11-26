@@ -21,7 +21,7 @@ func settable(collection, field string) bool {
 	allowed := map[string][]string{
 		protocol.Notes:       {"title", "body", "color", "trashed", "deleted"},
 		protocol.Items:       {"text", "checked", "deleted", "indent", "order"},
-		protocol.NoteState:   {"pinned", "archived", "reminder", "reminder_done"},
+		protocol.NoteState:   {"pinned", "archived", "reminder", "reminder_done", "order"},
 		protocol.Attachments: {"deleted"},
 	}
 	for _, f := range allowed[collection] {

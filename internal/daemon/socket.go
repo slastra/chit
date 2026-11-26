@@ -218,7 +218,11 @@ func (d *Daemon) dispatch(ctx context.Context, c *conn, req sock.Request) sock.R
 		return opReply(res, err)
 
 	case "pin":
-		res, err := d.ApplyLocal([]protocol.Op{d.op(protocol.NoteState, req.Note, "pinned", req.On)})
+		// a note changing sections lands on top of its new one
+		res, err := d.ApplyLocal([]protocol.Op{
+			d.op(protocol.NoteState, req.Note, "pinned", req.On),
+			d.op(protocol.NoteState, req.Note, "order", ""),
+		})
 		return opReply(res, err)
 
 	case "subscribe":
@@ -326,11 +330,14 @@ func (d *Daemon) stateEvent() sock.StateEvent {
 		}
 		ev.Notes = append(ev.Notes, sn)
 	}
+	// the board's order, so the pinned popout matches the app
+	byID := map[string]protocol.Note{}
+	for _, n := range s.Notes {
+		byID[n.ID] = n
+	}
 	sort.SliceStable(ev.Notes, func(i, j int) bool {
-		if ev.Notes[i].Pinned != ev.Notes[j].Pinned {
-			return ev.Notes[i].Pinned
-		}
-		return ev.Notes[i].Updated > ev.Notes[j].Updated
+		a, b := ev.Notes[i].ID, ev.Notes[j].ID
+		return notes.BoardBefore(byID[a], byID[b], notes.StateOf(s, a), notes.StateOf(s, b))
 	})
 	return ev
 }

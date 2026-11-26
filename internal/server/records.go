@@ -78,6 +78,7 @@ func stateOf(r *core.Record) protocol.State {
 		Labels:       labels,
 		Reminder:     dateOf(r, "reminder"),
 		ReminderDone: r.GetBool("reminder_done"),
+		Order:        r.GetString("order"),
 		Clocks:       clocksOf(r),
 	}
 }

@@ -119,7 +119,10 @@ type State struct {
 	Labels       []string `json:"labels"`
 	Reminder     string   `json:"reminder"`
 	ReminderDone bool     `json:"reminder_done"`
-	Clocks       Clocks   `json:"clocks"`
+	// Order is where this user put the note on their board (a fractional
+	// key, as items use); "" until they move it, which sorts it on top.
+	Order  string `json:"order"`
+	Clocks Clocks `json:"clocks"`
 }
 
 type Label struct {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/slastra/chit/internal/order"
 	"github.com/slastra/chit/internal/protocol"
 )
 
@@ -157,4 +158,33 @@ func Names(people []protocol.Person) map[string]string {
 		m[p.ID] = DisplayName(p)
 	}
 	return m
+}
+
+// BoardBefore reports whether note a comes before note b on a person's
+// board (sa and sb are their states): pinned notes first; within a
+// section, notes with no place yet (no valid order key) on top, newest
+// first, then the placed ones by key. The app sorts the same way
+// (app/lib/core/board_order.dart).
+func BoardBefore(a, b protocol.Note, sa, sb protocol.State) bool {
+	if sa.Pinned != sb.Pinned {
+		return sa.Pinned
+	}
+	ka, kb := boardKey(sa), boardKey(sb)
+	if (ka == "") != (kb == "") {
+		return ka == ""
+	}
+	if ka != kb {
+		return ka < kb
+	}
+	if a.Created != b.Created {
+		return a.Created > b.Created
+	}
+	return a.ID > b.ID
+}
+
+func boardKey(st protocol.State) string {
+	if order.Valid(st.Order) {
+		return st.Order
+	}
+	return ""
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 
 	"github.com/slastra/chit/internal/hlc"
+	"github.com/slastra/chit/internal/order"
 	"github.com/slastra/chit/internal/protocol"
 )
 
@@ -66,6 +67,7 @@ var specs = map[string]map[string]field{
 		"labels":        {kind: kStrings},
 		"reminder":      {kind: kDate},
 		"reminder_done": {kind: kBool},
+		"order":         {kind: kText},
 	},
 }
 
@@ -211,6 +213,15 @@ func applyGroup(tx core.App, me *core.Record, device string, ops []protocol.Op, 
 		if f.ownerOnly && !created && acc != isOwner {
 			results[i].Error = fmt.Sprintf("only the owner can set %s", op.Field)
 			continue
+		}
+		// order keys: valid fractional keys, or "" (no place yet, on a
+		// board); short enough to stay a key, not a payload
+		if op.Field == "order" {
+			if k, _ := values[i].(string); len(k) > 64 || (k != "" && !order.Valid(k)) ||
+				(k == "" && g.collection == protocol.Items) {
+				results[i].Error = "order must be a valid order key"
+				continue
+			}
 		}
 		if g.collection == protocol.NoteState && op.Field == "labels" {
 			if msg, err := checkLabels(tx, me.Id, values[i].([]string)); err != nil {
