@@ -25,6 +25,17 @@ Future<String> keepCopy(String id, String name, {String? from, Uint8List? bytes}
   await dir.create(recursive: true);
   final dest = File('${dir.path}/${_safe(name)}');
   if (from != null) {
+    // a file another app shared is already our own copy in the cache:
+    // move it rather than copy it again
+    final cache = (await getApplicationCacheDirectory()).path;
+    if (from.startsWith('$cache/share/')) {
+      try {
+        await File(from).rename(dest.path);
+        return dest.path;
+      } on FileSystemException {
+        // another filesystem: copy below
+      }
+    }
     await File(from).copy(dest.path);
   } else {
     await dest.writeAsBytes(bytes ?? Uint8List(0), flush: true);

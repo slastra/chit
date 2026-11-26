@@ -1,11 +1,16 @@
+import 'dart:async';
+
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../core/protocol.dart';
+import '../data/media.dart';
 import '../data/sync.dart';
 import '../state/providers.dart';
 import 'feedback.dart';
+import 'share_in.dart';
 import 'home_page.dart';
 import 'login_page.dart';
 import 'note_page.dart';
@@ -108,21 +113,63 @@ class ChitApp extends ConsumerStatefulWidget {
 
 class _ChitAppState extends ConsumerState<ChitApp> {
   late final AppLifecycleListener _lifecycle;
+  late final _inbox = ShareInbox(_received);
+
+  /// Shares that came in before there was anyone signed in to keep them.
+  final _held = <Shared>[];
 
   @override
   void initState() {
     super.initState();
     _lifecycle = AppLifecycleListener(onResume: () => ref.invalidate(systemSchemeProvider));
+    _inbox.start();
   }
 
   @override
   void dispose() {
+    _inbox.stop();
     _lifecycle.dispose();
     super.dispose();
   }
 
+  void _received(Shared share) {
+    _held.add(share);
+    _deliver();
+  }
+
+  /// Each share becomes a new note (its text, its files), opened; held
+  /// until someone is signed in.
+  Future<void> _deliver() async {
+    final engine = ref.read(engineProvider);
+    if (engine == null) return;
+    while (_held.isNotEmpty) {
+      final s = _held.removeAt(0);
+      if (s.tooBig.isNotEmpty) {
+        showMessage(
+          s.tooBig.length == 1
+              ? '${s.tooBig.first} is over the ${maxAttachmentSize >> 20} MB limit'
+              : '${s.tooBig.length} files are over the ${maxAttachmentSize >> 20} MB limit',
+        );
+      }
+      final text = noteTextOf(s.text, s.subject);
+      if (text.title.isEmpty && text.body.isEmpty && s.files.isEmpty) continue;
+      final id = randomId();
+      await engine.edit([
+        engine.op(Collections.notes, id, 'kind', 'text'),
+        if (text.title.isNotEmpty) engine.op(Collections.notes, id, 'title', text.title),
+        if (text.body.isNotEmpty) engine.op(Collections.notes, id, 'body', text.body),
+      ]);
+      if (s.files.isNotEmpty) await attachFiles(ref.read(replicaProvider), engine, id, s.files);
+      if (mounted) unawaited(ref.read(_router).push('/note/$id'));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    // a share held for sign-in goes out once someone is
+    ref.listen(engineProvider, (_, engine) {
+      if (engine != null && _held.isNotEmpty) unawaited(_deliver());
+    });
     // The server turned the session away: back to sign-in.
     ref.listen(syncStatusProvider, (_, next) {
       if (next.value?.phase == SyncPhase.signedOut) ref.read(sessionProvider.notifier).signOut();
