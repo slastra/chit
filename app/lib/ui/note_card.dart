@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import '../core/protocol.dart';
 import '../data/replica.dart';
 import '../state/providers.dart';
+import 'attachments.dart';
 import 'note_colors.dart';
 
 /// A note on the grid: title, the start of the body or the open items, and
@@ -33,12 +34,20 @@ class NoteCard extends ConsumerWidget {
     final open = items.where((i) => !i.checked).toList();
     final done = items.length - open.length;
     final files = library.attachments[note.id] ?? const <Attachment>[];
+    final images = files.where((a) => a.isImage).toList();
+    final others = files.where((a) => !a.isImage).toList();
+    // one mark per kind of file, counted when there are several
+    final kinds = <MediaKind, List<Attachment>>{};
+    for (final a in others) {
+      (kinds[a.kind] ??= []).add(a);
+    }
+    final uploading = others.where((a) => a.pending).firstOrNull;
     final shared =
         (library.members[note.id]?.isNotEmpty ?? false) || note.owner != ref.watch(sessionProvider).value?.user.id;
     final reminder = state.reminderDone ? '' : state.reminder;
 
     final more = open.length - _itemsShown;
-    final hasFooter = reminder.isNotEmpty || shared || files.isNotEmpty || (note.isList && (more > 0 || done > 0));
+    final hasFooter = reminder.isNotEmpty || shared || others.isNotEmpty || (note.isList && (more > 0 || done > 0));
     final rule = scheme?.onPrimaryContainer.withValues(alpha: 0.16) ?? theme.colorScheme.outlineVariant;
 
     final body = InkWell(
@@ -46,6 +55,8 @@ class NoteCard extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // images across the top, as Keep shows them
+          if (images.isNotEmpty) _CardImages(images: images),
           // content: title, then the text or the open items
           Padding(
             padding: EdgeInsets.fromLTRB(16, 16, 16, hasFooter ? 12 : 16),
@@ -100,7 +111,19 @@ class NoteCard extends ConsumerWidget {
                     ),
                   if (note.isList && more > 0) _Mark(label: '$more more', ink: faint),
                   if (note.isList && done > 0) _Mark(icon: Icons.check, label: '$done checked', ink: faint),
-                  if (files.isNotEmpty) _Mark(icon: Icons.attach_file, label: '${files.length}', ink: faint),
+                  for (final MapEntry(key: kind, value: list) in kinds.entries)
+                    _Mark(
+                      icon: kindIcon(list.first),
+                      label: list.length > 1 ? '${list.length}' : '',
+                      ink: faint,
+                      tooltip: switch (kind) {
+                        MediaKind.pdf => list.length > 1 ? '${list.length} PDFs' : 'PDF',
+                        MediaKind.video => list.length > 1 ? '${list.length} videos' : 'Video',
+                        MediaKind.audio => list.length > 1 ? '${list.length} recordings' : 'Recording',
+                        _ => list.length > 1 ? '${list.length} files' : 'File',
+                      },
+                    ),
+                  if (uploading != null) UploadMark(uploading, size: 14),
                   if (shared) _Mark(icon: Icons.group_outlined, ink: faint, tooltip: 'Shared'),
                 ],
               ),
@@ -224,6 +247,59 @@ class _ReminderChip extends StatelessWidget {
       labelStyle: cs == null ? null : TextStyle(color: cs.onPrimaryContainer),
       side: cs == null ? null : BorderSide(color: cs.onPrimaryContainer.withValues(alpha: 0.3)),
       onPressed: onPressed,
+    );
+  }
+}
+
+/// A card's images: one at its own shape (up to 240dp tall), or up to three
+/// squares in a row, the last counting any more.
+class _CardImages extends StatelessWidget {
+  const _CardImages({required this.images});
+  final List<Attachment> images;
+
+  @override
+  Widget build(BuildContext context) {
+    if (images.length == 1) {
+      final a = images.first;
+      return ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 240),
+        child: Stack(
+          children: [
+            AttachmentImage(a, thumb: '1080x0', width: double.infinity, placeholderHeight: 140),
+            Positioned(right: 8, bottom: 8, child: UploadMark(a, size: 16, onImage: true)),
+          ],
+        ),
+      );
+    }
+    final shown = images.take(3).toList();
+    final extra = images.length - shown.length;
+    return Row(
+      spacing: 2,
+      children: [
+        for (final (i, a) in shown.indexed)
+          Expanded(
+            child: AspectRatio(
+              aspectRatio: 1,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  AttachmentImage(a, thumb: '320x320'),
+                  if (i == shown.length - 1 && extra > 0)
+                    ColoredBox(
+                      color: const Color(0x80000000),
+                      child: Center(
+                        child: Text(
+                          '+$extra',
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Colors.white),
+                        ),
+                      ),
+                    ),
+                  Positioned(right: 4, bottom: 4, child: UploadMark(a, size: 14, onImage: true)),
+                ],
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

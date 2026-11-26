@@ -12,6 +12,7 @@ import 'note_page.dart';
 import 'theme.dart';
 import 'theme_file.dart';
 import 'theme_spec.dart';
+import 'viewer.dart';
 
 /// The desktop theme file, live (null: none, or on the web and phones).
 final themeSpecProvider = StreamProvider<ThemeSpec?>((ref) => watchThemeSpec());
@@ -33,6 +34,15 @@ final _router = Provider<GoRouter>((ref) {
     routes: [
       GoRoute(path: '/', builder: (_, _) => const HomePage()),
       GoRoute(path: '/login', builder: (_, _) => const LoginPage()),
+      // an attachment, full screen above everything, the note's dialog too
+      GoRoute(
+        path: '/note/:id/file/:att',
+        pageBuilder: (context, state) => MaterialPage(
+          key: state.pageKey,
+          fullscreenDialog: true,
+          child: ViewerPage(noteId: state.pathParameters['id']!, attachmentId: state.pathParameters['att']!),
+        ),
+      ),
       GoRoute(
         path: '/note/new',
         pageBuilder: (context, state) => _notePage(

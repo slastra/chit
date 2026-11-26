@@ -125,6 +125,52 @@ final class ChitApi {
     return [for (final p in (j['items'] as List? ?? const [])) Person.fromJson((p as Map).cast())];
   }
 
+  /// Uploads one file to [note] as attachment [id] (client-made, so a retry
+  /// after a lost answer is harmless). The server reads the name, size and
+  /// type itself. [onProgress] hears the bytes handed to the connection.
+  Future<({int seq, Json attachment})> upload(
+    String note,
+    String id,
+    String name,
+    Stream<List<int>> bytes,
+    int length, {
+    void Function(int sent)? onProgress,
+  }) async {
+    var sent = 0;
+    final counted = bytes.map((chunk) {
+      sent += chunk.length;
+      onProgress?.call(sent);
+      return chunk;
+    });
+    final req = http.MultipartRequest('POST', Uri.parse('$server/api/chit/notes/$note/attachments'))
+      ..headers.addAll(_headers)
+      ..fields['id'] = id
+      ..files.add(http.MultipartFile('file', counted, length, filename: name));
+    // a 250 MB file on a slow uplink takes a while
+    final resp = await http.Response.fromStream(await _http.send(req).timeout(const Duration(minutes: 30)));
+    final j = _decode(resp.statusCode, resp.body)! as Json;
+    return (seq: (j['seq'] as num?)?.toInt() ?? 0, attachment: (j['attachment']! as Map).cast<String, Object?>());
+  }
+
+  /// A short-lived token for downloading protected files.
+  Future<String> fileToken() async => ((await _send('POST', '/api/files/token'))! as Json)['token']! as String;
+
+  /// Where to download [a] (or one of its thumbnails, images only:
+  /// "320x320" or "1080x0") with a file token. The request needs no other
+  /// credentials.
+  Uri fileUrl(Attachment a, String fileToken, {String? thumb}) =>
+      Uri.parse('$server${a.path}').replace(queryParameters: {'token': fileToken, 'thumb': ?thumb});
+
+  /// The body of a GET as it arrives.
+  Future<Stream<List<int>>> download(Uri url) async {
+    final resp = await _http.send(http.Request('GET', url)).timeout(const Duration(seconds: 30));
+    if (resp.statusCode >= 300) {
+      final body = await resp.stream.bytesToString();
+      _decode(resp.statusCode, body);
+    }
+    return resp.stream;
+  }
+
   Future<Snapshot> snapshot() async => Snapshot.fromJson((await _send('GET', '/api/chit/snapshot'))! as Json);
 
   Future<({int seq, List<OpResult> results})> ops(List<Op> ops) async {

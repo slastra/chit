@@ -177,14 +177,44 @@ final class Attachment {
   String get name => json['name'] as String? ?? '';
   int get size => (json['size'] as num?)?.toInt() ?? 0;
   String get type => json['type'] as String? ?? '';
-  bool get isImage => type.startsWith('image/');
   bool get deleted => json['deleted'] == true;
+  String get created => json['created'] as String? ?? '';
+
+  /// What the app does with it: show, play, page through, or offer.
+  MediaKind get kind => MediaKind.of(type, name);
+  bool get isImage => kind == MediaKind.image;
 
   /// Set only on this device, for a file still waiting to upload.
   bool get pending => json['pending'] == true;
   String get local => json['local'] as String? ?? '';
 
   String get path => '/api/files/${Collections.attachments}/$id/$file';
+}
+
+/// How a file is shown. By MIME type, falling back to the name's extension
+/// (the server sniffs types, and a sniff can come back as octet-stream).
+enum MediaKind {
+  image,
+  video,
+  audio,
+  pdf,
+  other;
+
+  static MediaKind of(String type, String name) {
+    final t = type.toLowerCase();
+    if (t.startsWith('image/') && t != 'image/svg+xml') return image;
+    if (t.startsWith('video/')) return video;
+    if (t.startsWith('audio/')) return audio;
+    if (t == 'application/pdf') return pdf;
+    final ext = name.contains('.') ? name.split('.').last.toLowerCase() : '';
+    return switch (ext) {
+      'jpg' || 'jpeg' || 'png' || 'gif' || 'webp' || 'heic' || 'avif' || 'bmp' => image,
+      'mp4' || 'mov' || 'm4v' || 'webm' || 'mkv' || 'avi' || '3gp' => video,
+      'mp3' || 'm4a' || 'aac' || 'ogg' || 'opus' || 'oga' || 'wav' || 'flac' || 'weba' => audio,
+      'pdf' => pdf,
+      _ => other,
+    };
+  }
 }
 
 /// Everything the caller can see, as of [seq].

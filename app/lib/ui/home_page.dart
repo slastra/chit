@@ -1,12 +1,15 @@
 import 'dart:async';
 
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../core/protocol.dart';
+import '../data/media.dart';
 import '../data/replica.dart';
 import '../data/sync.dart';
 import '../state/providers.dart';
+import 'attachments.dart';
 import 'brand.dart';
 import 'create.dart';
 import 'feedback.dart';
@@ -160,7 +163,17 @@ class _HomePageState extends ConsumerState<HomePage> {
           children: [
             if (wide) _Drawer(shelf: _shelf, docked: true, onPick: _pick),
             Expanded(
-              child: RefreshIndicator(onRefresh: _refresh, child: content),
+              // files dropped on the board start a note of their own
+              child: DropTarget(
+                onDragDone: (d) async {
+                  final picked = <NewFile>[
+                    for (final f in d.files)
+                      (name: f.name, size: await f.length(), path: f.path.isEmpty ? null : f.path, bytes: null),
+                  ];
+                  if (context.mounted) await newNoteWithFiles(context, picked);
+                },
+                child: RefreshIndicator(onRefresh: _refresh, child: content),
+              ),
             ),
           ],
         ),

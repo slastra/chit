@@ -3,17 +3,19 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
-/// What a new note can start as. Image arrives with attachments.
+import 'attachments.dart';
+
+/// What a new note can start as.
 enum NewKind {
   note('Note', Icons.edit_outlined),
   list('List', Icons.check_box_outlined),
-  link('Link', Icons.link),
-  image('Image', Icons.image_outlined, available: false);
+  image('Image', Icons.image_outlined),
+  memo('Voice memo', Icons.mic_none),
+  link('Link', Icons.link);
 
-  const NewKind(this.label, this.icon, {this.available = true});
+  const NewKind(this.label, this.icon);
   final String label;
   final IconData icon;
-  final bool available;
 }
 
 /// Starts a new note of [kind].
@@ -29,7 +31,11 @@ Future<void> startNote(BuildContext context, NewKind kind) async {
       final host = Uri.tryParse(url)?.host.replaceFirst(RegExp(r'^www\.'), '') ?? '';
       await context.push(Uri(path: '/note/new', queryParameters: {'title': host, 'text': url}).toString());
     case NewKind.image:
-      break; // with attachments
+      final picked = await pickFrom(context, AddSource.media);
+      if (context.mounted) await newNoteWithFiles(context, picked);
+    case NewKind.memo:
+      final picked = await pickFrom(context, AddSource.memo);
+      if (context.mounted) await newNoteWithFiles(context, picked);
   }
 }
 
@@ -189,10 +195,7 @@ class _NewNoteSplitButtonState extends State<NewNoteSplitButton> {
             for (final kind in NewKind.values.where((k) => k != NewKind.note))
               MenuItemButton(
                 leadingIcon: Icon(kind.icon),
-                // menus have a disabled state (FAB menus do not): Image shows
-                // here, unavailable, until attachments land
-                trailingIcon: kind.available ? null : Text('Soon', style: Theme.of(context).textTheme.labelSmall),
-                onPressed: kind.available ? () => startNote(context, kind) : null,
+                onPressed: () => startNote(context, kind),
                 child: Text(kind.label),
               ),
           ],
@@ -245,8 +248,7 @@ class NewNoteFabMenu extends StatefulWidget {
 }
 
 class _NewNoteFabMenuState extends State<NewNoteFabMenu> with SingleTickerProviderStateMixin {
-  // FAB menu items have no disabled state, so only what works today
-  static final _kinds = NewKind.values.where((k) => k.available).toList();
+  static const _kinds = NewKind.values;
 
   /// How many items show, counted from the FAB up; springs between 0 and
   /// the item count, which staggers the reveal.

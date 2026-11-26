@@ -8,6 +8,8 @@ import '../core/hlc.dart';
 import '../core/protocol.dart';
 import '../data/api.dart';
 import '../data/database.dart';
+import '../data/local_files.dart' as files;
+import '../data/media.dart';
 import '../data/replica.dart';
 import '../data/sync.dart';
 
@@ -98,6 +100,9 @@ final engineProvider = Provider<SyncEngine?>((ref) {
     me: session.user.id,
     clock: HlcClock(session.device),
     onToken: (t) => unawaited(ref.read(sessionProvider.notifier).saveToken(t)),
+    openUpload: files.openUpload,
+    removeCopy: files.removeCopy,
+    onUploadFailed: (name, reason) => uploadFailures.add("Couldn't attach $name: $reason"),
   );
   unawaited(engine.start());
   ref.onDispose(() {
@@ -106,6 +111,50 @@ final engineProvider = Provider<SyncEngine?>((ref) {
   });
   return engine;
 });
+
+/// Files the server turned away, as messages for a snackbar (the app shows
+/// them; the engine has no UI).
+final uploadFailures = StreamController<String>.broadcast();
+
+/// Attachments for viewing, for the current session.
+final mediaProvider = Provider<Media?>((ref) {
+  final engine = ref.watch(engineProvider);
+  return engine == null ? null : Media(engine.api, ref.watch(replicaProvider));
+});
+
+/// How far each running upload has got, 0 to 1, by attachment id.
+final uploadProgressProvider = StreamProvider<Map<String, double>>((ref) async* {
+  final engine = ref.watch(engineProvider);
+  if (engine == null) return;
+  yield engine.uploads;
+  yield* engine.uploadProgress;
+});
+
+/// Attaches [picked] to [note] (which must exist locally already): each
+/// file shows at once as pending and uploads when the server can take it.
+/// Returns the names of files over the size limit, which are left out.
+Future<List<String>> attachFiles(Replica replica, SyncEngine? engine, String note, List<NewFile> picked) async {
+  final tooBig = <String>[];
+  for (final f in picked) {
+    if (f.size > maxAttachmentSize) {
+      tooBig.add(f.name);
+      continue;
+    }
+    final id = randomId();
+    final path = files.hasFiles ? await files.keepCopy(id, f.name, from: f.path, bytes: f.bytes) : null;
+    await replica.queueUpload(
+      id: id,
+      note: note,
+      name: f.name,
+      type: guessType(f.name),
+      size: f.size,
+      path: path,
+      bytes: files.hasFiles ? null : f.bytes,
+    );
+  }
+  unawaited(engine?.sendUploads());
+  return tooBig;
+}
 
 final syncStatusProvider = StreamProvider<SyncStatus>((ref) async* {
   final engine = ref.watch(engineProvider);

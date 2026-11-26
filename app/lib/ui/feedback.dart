@@ -27,6 +27,22 @@ class SnackbarHost extends StatelessWidget {
   );
 }
 
+/// A plain message, timed like the rest.
+void showMessage(String message) {
+  final context = messengerKey.currentContext;
+  if (context == null) return;
+  final wide = MediaQuery.sizeOf(context).width >= 600 + 2 * 12;
+  messengerKey.currentState?.showSnackBar(
+    SnackBar(
+      content: Text(message),
+      behavior: SnackBarBehavior.floating,
+      width: wide ? 600 : null,
+      margin: wide ? null : EdgeInsets.fromLTRB(12, 0, 12, 12 + snackbarClearance.value),
+      duration: const Duration(seconds: 6),
+    ),
+  );
+}
+
 /// A snackbar with Undo: Material's answer to a reversible action, instead
 /// of asking first. Floating, at most 600dp wide, and timed: with an action a
 /// snackbar would otherwise stay until dismissed (screen readers keep it

@@ -28,6 +28,7 @@ final class Replica {
   Future<void> wipe() => db.transaction(() async {
     await db.delete(db.records).go();
     await db.delete(db.outbox).go();
+    await db.delete(db.uploads).go();
     await (db.delete(db.meta)..where((m) => m.key.isIn(['cursor', 'user', 'server']))).go();
   });
 
@@ -75,17 +76,28 @@ final class Replica {
   }
 
   /// Replaces the replica with a server snapshot. Queued local edits are
-  /// re-applied on top, so offline work survives a resync.
+  /// re-applied on top, and files still waiting to upload put back, so
+  /// offline work survives a resync. A queued file the snapshot already
+  /// holds did land (its answer was lost): it leaves the queue.
   Future<void> replaceAll(Snapshot s) => db.transaction(() async {
     await db.delete(db.records).go();
+    final landed = <String>{};
     for (final MapEntry(key: collection, value: list) in s.records.entries) {
       for (final rec in list) {
         await _store(collection, rec);
+        if (collection == Collections.attachments) landed.add(rec['id'] as String? ?? '');
       }
     }
     final me = await meta('user') ?? '';
     for (final q in await pending()) {
       await _applyOp(q.op, me);
+    }
+    for (final u in await uploads()) {
+      if (landed.contains(u.id)) {
+        await (db.delete(db.uploads)..where((r) => r.id.equals(u.id))).go();
+      } else {
+        await _store(Collections.attachments, _pendingRecord(u));
+      }
     }
     await setMeta('cursor', '${s.seq}');
   });
@@ -163,6 +175,80 @@ final class Replica {
   }
 
   Future<void> ack(Iterable<int> seqs) => (db.delete(db.outbox)..where((o) => o.seq.isIn(seqs))).go();
+
+  // ---- uploads -------------------------------------------------------------
+
+  /// How a queued file shows until it lands: an attachment marked pending,
+  /// pointing at the local copy.
+  static Json _pendingRecord(Upload u) => {
+    'id': u.id,
+    'note': u.note,
+    'file': '',
+    'name': u.name,
+    'size': u.size,
+    'type': u.type,
+    'deleted': false,
+    'created': u.created,
+    'pending': true,
+    'local': u.path ?? '',
+    'clocks': <String, String>{},
+  };
+
+  /// Queues a file for [note]: it shows at once as a pending attachment and
+  /// waits in the upload queue.
+  Future<void> queueUpload({
+    required String id,
+    required String note,
+    required String name,
+    required String type,
+    required int size,
+    String? path,
+    Uint8List? bytes,
+  }) => db.transaction(() async {
+    final row = UploadsCompanion.insert(
+      id: id,
+      note: note,
+      name: name,
+      type: type,
+      size: size,
+      path: Value(path),
+      bytes: Value(bytes),
+      created: _stamp(),
+    );
+    await db.into(db.uploads).insert(row);
+    final u = await (db.select(db.uploads)..where((r) => r.id.equals(id))).getSingle();
+    await _store(Collections.attachments, _pendingRecord(u));
+    await _touch(note);
+  });
+
+  /// Files waiting to upload, oldest first.
+  Future<List<Upload>> uploads() => (db.select(db.uploads)..orderBy([(u) => OrderingTerm.asc(u.created)])).get();
+
+  Future<Upload?> upload(String id) => (db.select(db.uploads)..where((u) => u.id.equals(id))).getSingleOrNull();
+
+  /// A file landed: the server's record replaces the pending one outright
+  /// (a merge would keep the local-only pending and local fields).
+  Future<void> finishUpload(Json attachment) => db.transaction(() async {
+    final id = attachment['id'] as String? ?? '';
+    await (db.delete(db.uploads)..where((u) => u.id.equals(id))).go();
+    final cur = await _load(Collections.attachments, id);
+    // the feed may have brought it first, with a newer deleted flag
+    final merged = mergeRecord(
+      cur == null
+          ? null
+          : ({...cur}
+              ..remove('pending')
+              ..remove('local')),
+      attachment,
+    );
+    await _store(Collections.attachments, merged);
+  });
+
+  /// Gives up on a queued file: it leaves the queue and the note.
+  Future<void> dropUpload(String id) => db.transaction(() async {
+    await (db.delete(db.uploads)..where((u) => u.id.equals(id))).go();
+    await (db.delete(db.records)..where((r) => r.collection.equals(Collections.attachments) & r.id.equals(id))).go();
+  });
 
   // ---- reading -------------------------------------------------------------
 
@@ -268,6 +354,9 @@ final class Library {
     }
     for (final list in items.values) {
       list.sort((a, b) => a.order.compareTo(b.order));
+    }
+    for (final list in attachments.values) {
+      list.sort((a, b) => a.created.compareTo(b.created));
     }
     return Library(notes: notes, items: items, members: members, states: states, attachments: attachments);
   }

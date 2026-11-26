@@ -6,6 +6,7 @@ analyzer:
     - android/**
     - web/**
     - linux/**
+    - third_party/**
 
 formatter:
   page_width: 120

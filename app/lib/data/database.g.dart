@@ -621,16 +621,443 @@ class MetaCompanion extends UpdateCompanion<MetaData> {
   }
 }
 
+class $UploadsTable extends Uploads with TableInfo<$UploadsTable, Upload> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $UploadsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _noteMeta = const VerificationMeta('note');
+  @override
+  late final GeneratedColumn<String> note = GeneratedColumn<String>(
+    'note',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+    'name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _typeMeta = const VerificationMeta('type');
+  @override
+  late final GeneratedColumn<String> type = GeneratedColumn<String>(
+    'type',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sizeMeta = const VerificationMeta('size');
+  @override
+  late final GeneratedColumn<int> size = GeneratedColumn<int>(
+    'size',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _pathMeta = const VerificationMeta('path');
+  @override
+  late final GeneratedColumn<String> path = GeneratedColumn<String>(
+    'path',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _bytesMeta = const VerificationMeta('bytes');
+  @override
+  late final GeneratedColumn<Uint8List> bytes = GeneratedColumn<Uint8List>(
+    'bytes',
+    aliasedName,
+    true,
+    type: DriftSqlType.blob,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _createdMeta = const VerificationMeta('created');
+  @override
+  late final GeneratedColumn<String> created = GeneratedColumn<String>(
+    'created',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [id, note, name, type, size, path, bytes, created];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'uploads';
+  @override
+  VerificationContext validateIntegrity(Insertable<Upload> instance, {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('note')) {
+      context.handle(_noteMeta, note.isAcceptableOrUnknown(data['note']!, _noteMeta));
+    } else if (isInserting) {
+      context.missing(_noteMeta);
+    }
+    if (data.containsKey('name')) {
+      context.handle(_nameMeta, name.isAcceptableOrUnknown(data['name']!, _nameMeta));
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('type')) {
+      context.handle(_typeMeta, type.isAcceptableOrUnknown(data['type']!, _typeMeta));
+    } else if (isInserting) {
+      context.missing(_typeMeta);
+    }
+    if (data.containsKey('size')) {
+      context.handle(_sizeMeta, size.isAcceptableOrUnknown(data['size']!, _sizeMeta));
+    } else if (isInserting) {
+      context.missing(_sizeMeta);
+    }
+    if (data.containsKey('path')) {
+      context.handle(_pathMeta, path.isAcceptableOrUnknown(data['path']!, _pathMeta));
+    }
+    if (data.containsKey('bytes')) {
+      context.handle(_bytesMeta, bytes.isAcceptableOrUnknown(data['bytes']!, _bytesMeta));
+    }
+    if (data.containsKey('created')) {
+      context.handle(_createdMeta, created.isAcceptableOrUnknown(data['created']!, _createdMeta));
+    } else if (isInserting) {
+      context.missing(_createdMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  Upload map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return Upload(
+      id: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}id'])!,
+      note: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}note'])!,
+      name: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}name'])!,
+      type: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}type'])!,
+      size: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}size'])!,
+      path: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}path']),
+      bytes: attachedDatabase.typeMapping.read(DriftSqlType.blob, data['${effectivePrefix}bytes']),
+      created: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}created'])!,
+    );
+  }
+
+  @override
+  $UploadsTable createAlias(String alias) {
+    return $UploadsTable(attachedDatabase, alias);
+  }
+}
+
+class Upload extends DataClass implements Insertable<Upload> {
+  final String id;
+  final String note;
+  final String name;
+  final String type;
+  final int size;
+  final String? path;
+  final Uint8List? bytes;
+  final String created;
+  const Upload({
+    required this.id,
+    required this.note,
+    required this.name,
+    required this.type,
+    required this.size,
+    this.path,
+    this.bytes,
+    required this.created,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['note'] = Variable<String>(note);
+    map['name'] = Variable<String>(name);
+    map['type'] = Variable<String>(type);
+    map['size'] = Variable<int>(size);
+    if (!nullToAbsent || path != null) {
+      map['path'] = Variable<String>(path);
+    }
+    if (!nullToAbsent || bytes != null) {
+      map['bytes'] = Variable<Uint8List>(bytes);
+    }
+    map['created'] = Variable<String>(created);
+    return map;
+  }
+
+  UploadsCompanion toCompanion(bool nullToAbsent) {
+    return UploadsCompanion(
+      id: Value(id),
+      note: Value(note),
+      name: Value(name),
+      type: Value(type),
+      size: Value(size),
+      path: path == null && nullToAbsent ? const Value.absent() : Value(path),
+      bytes: bytes == null && nullToAbsent ? const Value.absent() : Value(bytes),
+      created: Value(created),
+    );
+  }
+
+  factory Upload.fromJson(Map<String, dynamic> json, {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return Upload(
+      id: serializer.fromJson<String>(json['id']),
+      note: serializer.fromJson<String>(json['note']),
+      name: serializer.fromJson<String>(json['name']),
+      type: serializer.fromJson<String>(json['type']),
+      size: serializer.fromJson<int>(json['size']),
+      path: serializer.fromJson<String?>(json['path']),
+      bytes: serializer.fromJson<Uint8List?>(json['bytes']),
+      created: serializer.fromJson<String>(json['created']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'note': serializer.toJson<String>(note),
+      'name': serializer.toJson<String>(name),
+      'type': serializer.toJson<String>(type),
+      'size': serializer.toJson<int>(size),
+      'path': serializer.toJson<String?>(path),
+      'bytes': serializer.toJson<Uint8List?>(bytes),
+      'created': serializer.toJson<String>(created),
+    };
+  }
+
+  Upload copyWith({
+    String? id,
+    String? note,
+    String? name,
+    String? type,
+    int? size,
+    Value<String?> path = const Value.absent(),
+    Value<Uint8List?> bytes = const Value.absent(),
+    String? created,
+  }) => Upload(
+    id: id ?? this.id,
+    note: note ?? this.note,
+    name: name ?? this.name,
+    type: type ?? this.type,
+    size: size ?? this.size,
+    path: path.present ? path.value : this.path,
+    bytes: bytes.present ? bytes.value : this.bytes,
+    created: created ?? this.created,
+  );
+  Upload copyWithCompanion(UploadsCompanion data) {
+    return Upload(
+      id: data.id.present ? data.id.value : this.id,
+      note: data.note.present ? data.note.value : this.note,
+      name: data.name.present ? data.name.value : this.name,
+      type: data.type.present ? data.type.value : this.type,
+      size: data.size.present ? data.size.value : this.size,
+      path: data.path.present ? data.path.value : this.path,
+      bytes: data.bytes.present ? data.bytes.value : this.bytes,
+      created: data.created.present ? data.created.value : this.created,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('Upload(')
+          ..write('id: $id, ')
+          ..write('note: $note, ')
+          ..write('name: $name, ')
+          ..write('type: $type, ')
+          ..write('size: $size, ')
+          ..write('path: $path, ')
+          ..write('bytes: $bytes, ')
+          ..write('created: $created')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, note, name, type, size, path, $driftBlobEquality.hash(bytes), created);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is Upload &&
+          other.id == this.id &&
+          other.note == this.note &&
+          other.name == this.name &&
+          other.type == this.type &&
+          other.size == this.size &&
+          other.path == this.path &&
+          $driftBlobEquality.equals(other.bytes, this.bytes) &&
+          other.created == this.created);
+}
+
+class UploadsCompanion extends UpdateCompanion<Upload> {
+  final Value<String> id;
+  final Value<String> note;
+  final Value<String> name;
+  final Value<String> type;
+  final Value<int> size;
+  final Value<String?> path;
+  final Value<Uint8List?> bytes;
+  final Value<String> created;
+  final Value<int> rowid;
+  const UploadsCompanion({
+    this.id = const Value.absent(),
+    this.note = const Value.absent(),
+    this.name = const Value.absent(),
+    this.type = const Value.absent(),
+    this.size = const Value.absent(),
+    this.path = const Value.absent(),
+    this.bytes = const Value.absent(),
+    this.created = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  UploadsCompanion.insert({
+    required String id,
+    required String note,
+    required String name,
+    required String type,
+    required int size,
+    this.path = const Value.absent(),
+    this.bytes = const Value.absent(),
+    required String created,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       note = Value(note),
+       name = Value(name),
+       type = Value(type),
+       size = Value(size),
+       created = Value(created);
+  static Insertable<Upload> custom({
+    Expression<String>? id,
+    Expression<String>? note,
+    Expression<String>? name,
+    Expression<String>? type,
+    Expression<int>? size,
+    Expression<String>? path,
+    Expression<Uint8List>? bytes,
+    Expression<String>? created,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (note != null) 'note': note,
+      if (name != null) 'name': name,
+      if (type != null) 'type': type,
+      if (size != null) 'size': size,
+      if (path != null) 'path': path,
+      if (bytes != null) 'bytes': bytes,
+      if (created != null) 'created': created,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  UploadsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? note,
+    Value<String>? name,
+    Value<String>? type,
+    Value<int>? size,
+    Value<String?>? path,
+    Value<Uint8List?>? bytes,
+    Value<String>? created,
+    Value<int>? rowid,
+  }) {
+    return UploadsCompanion(
+      id: id ?? this.id,
+      note: note ?? this.note,
+      name: name ?? this.name,
+      type: type ?? this.type,
+      size: size ?? this.size,
+      path: path ?? this.path,
+      bytes: bytes ?? this.bytes,
+      created: created ?? this.created,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (note.present) {
+      map['note'] = Variable<String>(note.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (type.present) {
+      map['type'] = Variable<String>(type.value);
+    }
+    if (size.present) {
+      map['size'] = Variable<int>(size.value);
+    }
+    if (path.present) {
+      map['path'] = Variable<String>(path.value);
+    }
+    if (bytes.present) {
+      map['bytes'] = Variable<Uint8List>(bytes.value);
+    }
+    if (created.present) {
+      map['created'] = Variable<String>(created.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('UploadsCompanion(')
+          ..write('id: $id, ')
+          ..write('note: $note, ')
+          ..write('name: $name, ')
+          ..write('type: $type, ')
+          ..write('size: $size, ')
+          ..write('path: $path, ')
+          ..write('bytes: $bytes, ')
+          ..write('created: $created, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$ChitDb extends GeneratedDatabase {
   _$ChitDb(QueryExecutor e) : super(e);
   $ChitDbManager get managers => $ChitDbManager(this);
   late final $RecordsTable records = $RecordsTable(this);
   late final $OutboxTable outbox = $OutboxTable(this);
   late final $MetaTable meta = $MetaTable(this);
+  late final $UploadsTable uploads = $UploadsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables => allSchemaEntities.whereType<TableInfo<Table, Object?>>();
   @override
-  List<DatabaseSchemaEntity> get allSchemaEntities => [records, outbox, meta];
+  List<DatabaseSchemaEntity> get allSchemaEntities => [records, outbox, meta, uploads];
 }
 
 typedef $$RecordsTableCreateCompanionBuilder = RecordsCompanion Function({
@@ -998,6 +1425,207 @@ typedef $$MetaTableProcessedTableManager =
       MetaData,
       PrefetchHooks Function()
     >;
+typedef $$UploadsTableCreateCompanionBuilder = UploadsCompanion Function({
+  required String id,
+  required String note,
+  required String name,
+  required String type,
+  required int size,
+  Value<String?> path,
+  Value<Uint8List?> bytes,
+  required String created,
+  Value<int> rowid,
+});
+typedef $$UploadsTableUpdateCompanionBuilder = UploadsCompanion Function({
+  Value<String> id,
+  Value<String> note,
+  Value<String> name,
+  Value<String> type,
+  Value<int> size,
+  Value<String?> path,
+  Value<Uint8List?> bytes,
+  Value<String> created,
+  Value<int> rowid,
+});
+
+class $$UploadsTableFilterComposer extends Composer<_$ChitDb, $UploadsTable> {
+  $$UploadsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get note => $composableBuilder(column: $table.note, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get name => $composableBuilder(column: $table.name, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get type => $composableBuilder(column: $table.type, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get size => $composableBuilder(column: $table.size, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get path => $composableBuilder(column: $table.path, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<Uint8List> get bytes =>
+      $composableBuilder(column: $table.bytes, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get created =>
+      $composableBuilder(column: $table.created, builder: (column) => ColumnFilters(column));
+}
+
+class $$UploadsTableOrderingComposer extends Composer<_$ChitDb, $UploadsTable> {
+  $$UploadsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get note =>
+      $composableBuilder(column: $table.note, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get type =>
+      $composableBuilder(column: $table.type, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get size =>
+      $composableBuilder(column: $table.size, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get path =>
+      $composableBuilder(column: $table.path, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<Uint8List> get bytes =>
+      $composableBuilder(column: $table.bytes, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get created =>
+      $composableBuilder(column: $table.created, builder: (column) => ColumnOrderings(column));
+}
+
+class $$UploadsTableAnnotationComposer extends Composer<_$ChitDb, $UploadsTable> {
+  $$UploadsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id => $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get note => $composableBuilder(column: $table.note, builder: (column) => column);
+
+  GeneratedColumn<String> get name => $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<String> get type => $composableBuilder(column: $table.type, builder: (column) => column);
+
+  GeneratedColumn<int> get size => $composableBuilder(column: $table.size, builder: (column) => column);
+
+  GeneratedColumn<String> get path => $composableBuilder(column: $table.path, builder: (column) => column);
+
+  GeneratedColumn<Uint8List> get bytes => $composableBuilder(column: $table.bytes, builder: (column) => column);
+
+  GeneratedColumn<String> get created => $composableBuilder(column: $table.created, builder: (column) => column);
+}
+
+class $$UploadsTableTableManager
+    extends
+        RootTableManager<
+          _$ChitDb,
+          $UploadsTable,
+          Upload,
+          $$UploadsTableFilterComposer,
+          $$UploadsTableOrderingComposer,
+          $$UploadsTableAnnotationComposer,
+          $$UploadsTableCreateCompanionBuilder,
+          $$UploadsTableUpdateCompanionBuilder,
+          (Upload, BaseReferences<_$ChitDb, $UploadsTable, Upload>),
+          Upload,
+          PrefetchHooks Function()
+        > {
+  $$UploadsTableTableManager(_$ChitDb db, $UploadsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () => $$UploadsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () => $$UploadsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () => $$UploadsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> note = const Value.absent(),
+                Value<String> name = const Value.absent(),
+                Value<String> type = const Value.absent(),
+                Value<int> size = const Value.absent(),
+                Value<String?> path = const Value.absent(),
+                Value<Uint8List?> bytes = const Value.absent(),
+                Value<String> created = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => UploadsCompanion(
+                id: id,
+                note: note,
+                name: name,
+                type: type,
+                size: size,
+                path: path,
+                bytes: bytes,
+                created: created,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String note,
+                required String name,
+                required String type,
+                required int size,
+                Value<String?> path = const Value.absent(),
+                Value<Uint8List?> bytes = const Value.absent(),
+                required String created,
+                Value<int> rowid = const Value.absent(),
+              }) => UploadsCompanion.insert(
+                id: id,
+                note: note,
+                name: name,
+                type: type,
+                size: size,
+                path: path,
+                bytes: bytes,
+                created: created,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$UploadsTable, Upload>(table),
+                  BaseReferences<_$ChitDb, $UploadsTable, Upload>(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$UploadsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$ChitDb,
+      $UploadsTable,
+      Upload,
+      $$UploadsTableFilterComposer,
+      $$UploadsTableOrderingComposer,
+      $$UploadsTableAnnotationComposer,
+      $$UploadsTableCreateCompanionBuilder,
+      $$UploadsTableUpdateCompanionBuilder,
+      (Upload, BaseReferences<_$ChitDb, $UploadsTable, Upload>),
+      Upload,
+      PrefetchHooks Function()
+    >;
 
 class $ChitDbManager {
   final _$ChitDb _db;
@@ -1005,4 +1633,5 @@ class $ChitDbManager {
   $$RecordsTableTableManager get records => $$RecordsTableTableManager(_db, _db.records);
   $$OutboxTableTableManager get outbox => $$OutboxTableTableManager(_db, _db.outbox);
   $$MetaTableTableManager get meta => $$MetaTableTableManager(_db, _db.meta);
+  $$UploadsTableTableManager get uploads => $$UploadsTableTableManager(_db, _db.uploads);
 }

@@ -35,12 +35,36 @@ class Meta extends Table {
   Set<Column<Object>> get primaryKey => {key};
 }
 
-@DriftDatabase(tables: [Records, Outbox, Meta])
+/// Files attached here and not uploaded yet, oldest first. On native
+/// platforms [path] is the app's own copy of the file; the web build has no
+/// files to point at, so it keeps the [bytes].
+class Uploads extends Table {
+  TextColumn get id => text()();
+  TextColumn get note => text()();
+  TextColumn get name => text()();
+  TextColumn get type => text()();
+  IntColumn get size => integer()();
+  TextColumn get path => text().nullable()();
+  BlobColumn get bytes => blob().nullable()();
+  TextColumn get created => text()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
+}
+
+@DriftDatabase(tables: [Records, Outbox, Meta, Uploads])
 class ChitDb extends _$ChitDb {
   ChitDb([QueryExecutor? executor]) : super(executor ?? _open());
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+    onUpgrade: (m, from, to) async {
+      if (from < 2) await m.createTable(uploads);
+    },
+  );
 
   // The web build runs SQLite as WebAssembly in a worker; the native
   // builds use the bundled library. drift_flutter picks per platform.

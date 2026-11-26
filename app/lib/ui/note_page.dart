@@ -1,16 +1,21 @@
 import 'dart:async';
 
+import 'package:desktop_drop/desktop_drop.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../core/order.dart';
 import '../core/protocol.dart';
+import '../data/local_files.dart' show clipboardImage;
+import '../data/media.dart';
 import '../data/replica.dart';
 import '../data/sync.dart';
 import '../state/providers.dart';
 import 'note_colors.dart';
 import 'app.dart' show themeSpecProvider;
+import 'attachments.dart';
 import 'feedback.dart';
 import 'home_page.dart' show isExpanded;
 import 'theme.dart';
@@ -64,11 +69,17 @@ class _NotePageState extends ConsumerState<NotePage> {
   bool _loaded = false;
   String? _focusNext;
 
-  SyncEngine? get _engine => ref.read(engineProvider);
+  // Kept from the last build: dispose() may not use ref (the element is
+  // already unmounting), and it still has to send the last edits.
+  SyncEngine? _engine;
+  Library? _library;
+
+  bool _dropping = false;
 
   @override
   void initState() {
     super.initState();
+    HardwareKeyboard.instance.addHandler(_onKey);
     if (widget.noteId == null && (widget.initialTitle.isNotEmpty || widget.initialBody.isNotEmpty)) {
       _title.text = widget.initialTitle;
       _body.text = widget.initialBody;
@@ -88,6 +99,7 @@ class _NotePageState extends ConsumerState<NotePage> {
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onKey);
     for (final t in _timers.values) {
       t.cancel();
     }
@@ -146,7 +158,7 @@ class _NotePageState extends ConsumerState<NotePage> {
 
   void _discardIfEmpty() {
     if (!_exists) return;
-    final lib = ref.read(libraryProvider).value;
+    final lib = _library;
     final items = lib?.items[_id] ?? const <Item>[];
     final empty =
         _title.text.trim().isEmpty &&
@@ -166,6 +178,62 @@ class _NotePageState extends ConsumerState<NotePage> {
 
   void _setNote(String field, Object? value) => _edit(() => [_op(Collections.notes, _id, field, value)]);
   void _setState(String field, Object? value) => _edit(() => [_op(Collections.noteState, _id, field, value)]);
+
+  // ---- files -----------------------------------------------------------------
+
+  /// Attaches files to this note, creating it first if it is new.
+  Future<void> _attach(List<NewFile> picked) async {
+    if (picked.isEmpty) return;
+    _edit(() => []);
+    await attachTo(context, _id, picked);
+  }
+
+  Future<void> _add(AddSource source) async {
+    final picked = await pickFrom(context, source);
+    if (mounted) await _attach(picked);
+  }
+
+  /// Ctrl+V with an image on the clipboard attaches it. The text fields
+  /// still paste text as usual; an image comes through only when the
+  /// clipboard has no plain text to offer.
+  bool _onKey(KeyEvent e) {
+    final paste =
+        e is KeyDownEvent &&
+        e.logicalKey == LogicalKeyboardKey.keyV &&
+        (HardwareKeyboard.instance.isControlPressed || HardwareKeyboard.instance.isMetaPressed);
+    if (paste && mounted && (ModalRoute.of(context)?.isCurrent ?? false)) {
+      unawaited(() async {
+        final img = await clipboardImage();
+        if (img != null && mounted) {
+          await _attach([(name: img.name, size: img.bytes.length, path: null, bytes: img.bytes)]);
+        }
+      }());
+    }
+    return false;
+  }
+
+  void _removeFile(Attachment a) {
+    if (a.pending) {
+      unawaited(ref.read(replicaProvider).dropUpload(a.id));
+      return;
+    }
+    final engine = _engine;
+    if (engine == null) return;
+    unawaited(engine.edit([engine.op(Collections.attachments, a.id, 'deleted', true)]));
+    showUndo('File removed', () => engine.edit([engine.op(Collections.attachments, a.id, 'deleted', false)]));
+  }
+
+  /// A picture or file a keyboard inserts (Android's image keyboards and
+  /// clipboard suggestions).
+  late final _insertion = ContentInsertionConfiguration(
+    onContentInserted: (content) {
+      final data = content.data;
+      if (data == null) return;
+      final ext = content.mimeType.split('/').last.replaceAll('jpeg', 'jpg');
+      final name = content.uri.split('/').last.contains('.') ? content.uri.split('/').last : 'Inserted.$ext';
+      unawaited(_attach([(name: name, size: data.length, path: null, bytes: data)]));
+    },
+  );
 
   // ---- checklist -------------------------------------------------------------
 
@@ -233,7 +301,9 @@ class _NotePageState extends ConsumerState<NotePage> {
 
   @override
   Widget build(BuildContext context) {
+    _engine = ref.watch(engineProvider);
     final lib = ref.watch(libraryProvider).value ?? Library.empty;
+    _library = lib;
     final note = lib.notes.where((n) => n.id == _id).firstOrNull;
     final me = ref.watch(sessionProvider).value?.user.id ?? '';
 
@@ -257,6 +327,9 @@ class _NotePageState extends ConsumerState<NotePage> {
     }
 
     final isList = note?.isList ?? _listWhileNew;
+    final attached = lib.attachments[_id] ?? const <Attachment>[];
+    final images = attached.where((a) => a.isImage).toList();
+    final others = attached.where((a) => !a.isImage).toList();
     final items = lib.items[_id] ?? const <Item>[];
     final open = items.where((i) => !i.checked).toList();
     final checked = items.where((i) => i.checked).toList();
@@ -387,68 +460,120 @@ class _NotePageState extends ConsumerState<NotePage> {
             const SizedBox(width: 4),
           ],
         ),
-        body: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-          children: [
-            Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 760),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    TextField(
-                      controller: _title,
-                      focusNode: _titleFocus,
-                      style: text.titleLarge,
-                      decoration: const InputDecoration(hintText: 'Title', border: InputBorder.none),
-                      textInputAction: TextInputAction.next,
-                      textCapitalization: TextCapitalization.sentences,
-                      onChanged: (v) => _later('title', () => _setNote('title', v)),
-                      onSubmitted: (_) => isList
-                          ? (open.isEmpty ? _addItem(items) : _itemNode(open.first.id).requestFocus())
-                          : _bodyFocus.requestFocus(),
-                    ),
-                    if (!isList)
-                      TextField(
-                        controller: _body,
-                        focusNode: _bodyFocus,
-                        style: text.bodyLarge,
-                        decoration: const InputDecoration(hintText: 'Note', border: InputBorder.none),
-                        maxLines: null,
-                        minLines: 6,
-                        keyboardType: TextInputType.multiline,
-                        textCapitalization: TextCapitalization.sentences,
-                        onChanged: (v) => _later('body', () => _setNote('body', v)),
-                      ),
-                    if (isList) ...[
-                      for (final it in open) itemRow(it),
-                      ListTile(
-                        leading: const Icon(Icons.add),
-                        title: const Text('List item'),
-                        contentPadding: const EdgeInsets.only(left: 16),
-                        onTap: () => _addItem(items),
-                      ),
-                      if (checked.isNotEmpty) ...[
-                        const Divider(),
-                        ListTile(
-                          contentPadding: const EdgeInsets.only(left: 16),
-                          leading: AnimatedRotation(
-                            turns: _showChecked ? 0 : -0.25,
-                            duration: const Duration(milliseconds: 200),
-                            child: const Icon(Icons.expand_more),
+        body: DropTarget(
+          onDragEntered: (_) => setState(() => _dropping = true),
+          onDragExited: (_) => setState(() => _dropping = false),
+          onDragDone: (d) async {
+            setState(() => _dropping = false);
+            final picked = <NewFile>[
+              for (final f in d.files)
+                (name: f.name, size: await f.length(), path: f.path.isEmpty ? null : f.path, bytes: null),
+            ];
+            await _attach(picked);
+          },
+          child: Stack(
+            children: [
+              ListView(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                children: [
+                  Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 760),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // images first, as Keep shows them
+                          if (images.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                child: NoteImages(images: images),
+                              ),
+                            ),
+                          TextField(
+                            contentInsertionConfiguration: _insertion,
+                            controller: _title,
+                            focusNode: _titleFocus,
+                            style: text.titleLarge,
+                            decoration: const InputDecoration(hintText: 'Title', border: InputBorder.none),
+                            textInputAction: TextInputAction.next,
+                            textCapitalization: TextCapitalization.sentences,
+                            onChanged: (v) => _later('title', () => _setNote('title', v)),
+                            onSubmitted: (_) => isList
+                                ? (open.isEmpty ? _addItem(items) : _itemNode(open.first.id).requestFocus())
+                                : _bodyFocus.requestFocus(),
                           ),
-                          title: Text('${checked.length} checked item${checked.length == 1 ? '' : 's'}'),
-                          onTap: () => setState(() => _showChecked = !_showChecked),
-                        ),
-                        if (_showChecked)
-                          for (final it in checked) itemRow(it),
-                      ],
-                    ],
-                  ],
-                ),
+                          if (!isList)
+                            TextField(
+                              controller: _body,
+                              focusNode: _bodyFocus,
+                              style: text.bodyLarge,
+                              decoration: const InputDecoration(hintText: 'Note', border: InputBorder.none),
+                              maxLines: null,
+                              minLines: 6,
+                              keyboardType: TextInputType.multiline,
+                              textCapitalization: TextCapitalization.sentences,
+                              onChanged: (v) => _later('body', () => _setNote('body', v)),
+                              contentInsertionConfiguration: _insertion,
+                            ),
+                          if (isList) ...[
+                            for (final it in open) itemRow(it),
+                            ListTile(
+                              leading: const Icon(Icons.add),
+                              title: const Text('List item'),
+                              contentPadding: const EdgeInsets.only(left: 16),
+                              onTap: () => _addItem(items),
+                            ),
+                            if (checked.isNotEmpty) ...[
+                              const Divider(),
+                              ListTile(
+                                contentPadding: const EdgeInsets.only(left: 16),
+                                leading: AnimatedRotation(
+                                  turns: _showChecked ? 0 : -0.25,
+                                  duration: const Duration(milliseconds: 200),
+                                  child: const Icon(Icons.expand_more),
+                                ),
+                                title: Text('${checked.length} checked item${checked.length == 1 ? '' : 's'}'),
+                                onTap: () => setState(() => _showChecked = !_showChecked),
+                              ),
+                              if (_showChecked)
+                                for (final it in checked) itemRow(it),
+                            ],
+                          ],
+                          // other files below the text, each a row
+                          if (others.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            for (final a in others)
+                              FileRow(key: ValueKey(a.id), attachment: a, onRemove: () => _removeFile(a)),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ],
+              // a drop lands on the whole note: say so while files hover
+              if (_dropping)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: Container(
+                      margin: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primaryContainer.withValues(alpha: 0.85),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: theme.colorScheme.primary, width: 2),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        'Drop to attach',
+                        style: text.titleMedium?.copyWith(color: theme.colorScheme.onPrimaryContainer),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
         bottomNavigationBar: _NoteBar(
           isList: isList,
@@ -457,6 +582,7 @@ class _NotePageState extends ConsumerState<NotePage> {
           edited: note?.updated ?? '',
           onToggleList: () => _convert(note, items),
           onColor: (c) => _setNote('color', c),
+          onAdd: _add,
         ),
       ),
     );
@@ -561,6 +687,7 @@ class _NoteBar extends StatelessWidget {
     required this.edited,
     required this.onToggleList,
     required this.onColor,
+    required this.onAdd,
   });
   final bool isList;
   final bool inDialog;
@@ -568,6 +695,7 @@ class _NoteBar extends StatelessWidget {
   final String edited;
   final VoidCallback onToggleList;
   final ValueChanged<String> onColor;
+  final ValueChanged<AddSource> onAdd;
 
   @override
   Widget build(BuildContext context) {
@@ -627,6 +755,7 @@ class _NoteBar extends StatelessWidget {
                 builder: (_) => _ColorSheet(current: color, onPick: onColor),
               ),
             ),
+          AddButton(onPick: onAdd),
           const Spacer(),
           if (when != null)
             Text(
