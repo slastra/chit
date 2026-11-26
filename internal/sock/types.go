@@ -4,6 +4,8 @@
 package sock
 
 import (
+	"encoding/json"
+
 	"github.com/slastra/chit/internal/capture"
 	"github.com/slastra/chit/internal/protocol"
 )
@@ -35,6 +37,15 @@ type Request struct {
 	Draft *capture.Draft `json:"draft,omitempty"`
 	// files: paths to check before attaching
 	Paths []string `json:"paths,omitempty"`
+	// set: one field of one record (see daemon.settable)
+	Collection string          `json:"collection,omitempty"`
+	ID         string          `json:"id,omitempty"`
+	Field      string          `json:"field,omitempty"`
+	Value      json.RawMessage `json:"value,omitempty"`
+	// add-item: put the new item after this one ("" = at the end)
+	After string `json:"after,omitempty"`
+	// fetch: an attachment id and an optional thumb size ("320x320")
+	Thumb string `json:"thumb,omitempty"`
 }
 
 // Reply answers one Request.
@@ -48,6 +59,8 @@ type Reply struct {
 	People   []protocol.Person   `json:"people,omitempty"`
 	Plan     *capture.Plan       `json:"plan,omitempty"`
 	Files    []capture.File      `json:"files,omitempty"`
+	ID       string              `json:"id,omitempty"`   // add-item: the new item
+	Path     string              `json:"path,omitempty"` // fetch: the local file
 }
 
 // ChangeEvent carries one change to subscribers that asked for them.
@@ -56,8 +69,8 @@ type ChangeEvent struct {
 	Change protocol.Change `json:"change"`
 }
 
-// StateEvent is what lastshell renders: the daemon's status plus notes
-// trimmed for QML, pinned first, then most recently updated.
+// StateEvent is what lastshell renders: the daemon's status plus every
+// note (trashed ones flagged), pinned first, then most recently updated.
 type StateEvent struct {
 	Event string `json:"event"` // "state"
 	Status
@@ -65,20 +78,34 @@ type StateEvent struct {
 }
 
 type ShellNote struct {
-	ID          string      `json:"id"`
-	Title       string      `json:"title"`
-	Kind        string      `json:"kind"`
-	Color       string      `json:"color"`
-	Body        string      `json:"body"`
-	Pinned      bool        `json:"pinned"`
-	Archived    bool        `json:"archived"`
-	Shared      bool        `json:"shared"`
-	Open        int         `json:"open"`
-	Done        int         `json:"done"`
-	Items       []ShellItem `json:"items"`
-	Attachments int         `json:"attachments"`
-	Reminder    string      `json:"reminder"`
-	Updated     string      `json:"updated"`
+	ID string `json:"id"`
+	// Title is the note's own title ("" when it has none); Label is what to
+	// show: the title, else the start of the body.
+	Title    string      `json:"title"`
+	Label    string      `json:"label"`
+	Kind     string      `json:"kind"`
+	Color    string      `json:"color"`
+	Body     string      `json:"body"`
+	Pinned   bool        `json:"pinned"`
+	Archived bool        `json:"archived"`
+	Trashed  bool        `json:"trashed"`
+	Owned    bool        `json:"owned"` // trash and delete are the owner's
+	Shared   bool        `json:"shared"`
+	Open     int         `json:"open"`
+	Done     int         `json:"done"`
+	Items    []ShellItem `json:"items"`
+	Files    []ShellFile `json:"files"`
+	Reminder string      `json:"reminder"`
+	Updated  string      `json:"updated"`
+}
+
+type ShellFile struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Size    int64  `json:"size"`
+	Type    string `json:"type"`
+	Image   bool   `json:"image"`
+	Pending bool   `json:"pending"`
 }
 
 type ShellItem struct {

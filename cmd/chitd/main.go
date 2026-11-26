@@ -54,6 +54,13 @@ func dataDir() string {
 	return filepath.Join(home, ".local", "share", "chit")
 }
 
+func cacheDir() string {
+	if d, err := os.UserCacheDir(); err == nil {
+		return filepath.Join(d, "chit")
+	}
+	return filepath.Join(dataDir(), "cache")
+}
+
 func serve() error {
 	log.SetFlags(0) // journald stamps lines
 	rep, err := replica.Open(filepath.Join(dataDir(), "replica.db"))
@@ -69,6 +76,7 @@ func serve() error {
 		Replica:    rep,
 		Socket:     sock.DefaultPath(),
 		UploadDir:  filepath.Join(dataDir(), "uploads"),
+		CacheDir:   cacheDir(),
 		LoadConfig: config.Load,
 		Notifier:   notifier,
 		Logf:       log.Printf,

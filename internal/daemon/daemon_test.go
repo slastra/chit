@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/slastra/chit/internal/capture"
 	"github.com/slastra/chit/internal/config"
+	"github.com/slastra/chit/internal/notes"
 	"github.com/slastra/chit/internal/protocol"
 	"github.com/slastra/chit/internal/replica"
 	"github.com/slastra/chit/internal/sock"
@@ -297,5 +299,67 @@ func TestComposeQueuesFilesAfterTheNote(t *testing.T) {
 	}
 	if ups, _ := d.rep.PendingUploads(); len(ups) != 0 {
 		t.Fatal("upload still queued")
+	}
+}
+
+func TestSetIsLimitedToEditableFields(t *testing.T) {
+	d := newDaemon(t, nil)
+	ok := d.dispatch(context.Background(), nil, sock.Request{Op: "set", Collection: protocol.Notes, ID: listID, Field: "title", Value: raw("Weekly shop")})
+	if !ok.OK {
+		t.Fatalf("set title: %+v", ok)
+	}
+	for _, bad := range []sock.Request{
+		{Op: "set", Collection: protocol.Notes, ID: listID, Field: "owner", Value: raw(angelica)},
+		{Op: "set", Collection: protocol.Members, ID: "member000000001", Field: "role", Value: raw("editor")},
+		{Op: "set", Collection: protocol.Notes, ID: listID, Field: "title", Value: json.RawMessage("{not json")},
+	} {
+		if r := d.dispatch(context.Background(), nil, bad); r.OK {
+			t.Errorf("%s.%s accepted", bad.Collection, bad.Field)
+		}
+	}
+	var n protocol.Note
+	d.rep.Record(protocol.Notes, listID, &n)
+	if n.Title != "Weekly shop" || n.Owner != me {
+		t.Fatalf("note = %+v", n)
+	}
+}
+
+func TestAddItemInsertsAfter(t *testing.T) {
+	d := newDaemon(t, nil)
+	last, err := d.addItem(listID, "eggs", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mid, err := d.addItem(listID, "butter", itemID) // between milk and eggs
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, _ := d.rep.Snapshot()
+	items := notes.ItemsOf(s, listID)
+	sort.Slice(items, func(i, j int) bool { return items[i].Order < items[j].Order })
+	got := []string{items[0].ID, items[1].ID, items[2].ID}
+	if got[0] != itemID || got[1] != mid || got[2] != last {
+		t.Fatalf("order = %v", []string{items[0].Text, items[1].Text, items[2].Text})
+	}
+}
+
+func TestFetchPendingUsesTheQueuedCopy(t *testing.T) {
+	d := newDaemon(t, nil)
+	d.opts.UploadDir = filepath.Join(t.TempDir(), "uploads")
+	src := filepath.Join(t.TempDir(), "a.png")
+	os.WriteFile(src, []byte("\x89PNG\r\n\x1a\nx"), 0o600)
+	s, _ := d.rep.Snapshot()
+	plan, _ := capture.Compose(capture.Draft{Body: "groceries:", Files: []string{src}}, s)
+	if err := d.compose(&plan, s); err != nil {
+		t.Fatal(err)
+	}
+	ups, _ := d.rep.PendingUploads()
+	path, err := d.fetch(context.Background(), ups[0].ID, "320x320")
+	if err != nil || path != ups[0].Path {
+		t.Fatalf("fetch = %q, %v; want %q", path, err, ups[0].Path)
+	}
+	ev := d.stateEvent()
+	if len(ev.Notes[0].Files) != 1 || !ev.Notes[0].Files[0].Pending || !ev.Notes[0].Files[0].Image {
+		t.Fatalf("state files = %+v", ev.Notes[0].Files)
 	}
 }

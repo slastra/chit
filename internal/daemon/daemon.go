@@ -31,6 +31,8 @@ type Options struct {
 	// UploadDir holds copies of files waiting to upload, so a note saved
 	// offline keeps its attachments even if the originals go.
 	UploadDir string
+	// CacheDir holds downloaded attachments and thumbnails.
+	CacheDir string
 	// LoadConfig reads the signed-in session; it is called again whenever
 	// the daemon reconnects, so chit login takes effect without a restart.
 	LoadConfig func() (*config.Config, error)

@@ -52,6 +52,9 @@ Types are in `internal/sock`.
 | `files` | `paths` | `files`: each path checked (size, type, image, or `error`) |
 | `compose-preview` | `draft` | `plan` (what `compose` would do) |
 | `compose` | `draft` | `plan` (and does it; files join the upload queue) |
+| `set` | `collection`, `id`, `field`, `value` | `results` (one field; see below) |
+| `add-item` | `note`, `text`, `after` | `id` of the new item (after `after`, else at the end) |
+| `fetch` | `id`, `thumb` | `path`: a local copy of an attachment (or its `320x320` / `1080x0` thumb), cached |
 | `check` | `item`, `on` | `results` |
 | `pin` | `note`, `on` | `results` |
 | `subscribe` | `changes` | `{"ok":true}`, then pushed events |
@@ -62,12 +65,19 @@ Replies: `{"req":"…","ok":true,…}` or `{"req":"…","ok":false,"error":"…"
 Pushed to subscribers:
 
 - `{"event":"state", online, signed_in, pending, server, user, error, notes:[…]}` on
-  subscribe and after every change (at most every 100 ms). Each note: `id, title, kind,
-  color, body (first 600 characters), pinned, archived, shared, open, done, items:[{id,
-  text, checked, indent}], attachments, reminder, updated`, pinned first, then most
-  recently updated. Notes in the trash are left out.
+  subscribe and after every change (at most every 100 ms). Each note: `id, title` (its
+  own, may be empty), `label` (what to show), `kind, color, body, pinned, archived,
+  trashed, owned, shared, open, done, items:[{id, text, checked, indent}], files:[{id,
+  name, size, type, image, pending}], reminder, updated`, pinned first, then most
+  recently updated.
 - `{"event":"change","change":{…}}` for every change, local or remote, when the
   subscription asked for `changes`.
+
+`set` takes these fields, and nothing else: notes `title, body, color, trashed, deleted`;
+items `text, checked, deleted, indent, order`; note_state `pinned, archived, reminder,
+reminder_done`; attachments `deleted`. The server still decides who may change what.
+Fetched files live under `$XDG_CACHE_HOME/chit`; a file waiting to upload is served from
+its queued copy.
 
 ## Capture
 

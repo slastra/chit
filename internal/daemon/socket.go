@@ -163,6 +163,31 @@ func (d *Daemon) dispatch(ctx context.Context, c *conn, req sock.Request) sock.R
 		}
 		return sock.Reply{OK: true, Plan: &plan}
 
+	case "set":
+		if !settable(req.Collection, req.Field) {
+			return fail(fmt.Errorf("%s.%s is not editable here", req.Collection, req.Field))
+		}
+		if !json.Valid(req.Value) {
+			return fail(fmt.Errorf("value is not JSON"))
+		}
+		op := protocol.Op{Collection: req.Collection, ID: req.ID, Field: req.Field, Value: req.Value, HLC: d.clock.Now()}
+		res, err := d.ApplyLocal([]protocol.Op{op})
+		return opReply(res, err)
+
+	case "add-item":
+		id, err := d.addItem(req.Note, req.Text, req.After)
+		if err != nil {
+			return fail(err)
+		}
+		return sock.Reply{OK: true, ID: id}
+
+	case "fetch":
+		path, err := d.fetch(ctx, req.ID, req.Thumb)
+		if err != nil {
+			return fail(err)
+		}
+		return sock.Reply{OK: true, Path: path}
+
 	case "check":
 		res, err := d.ApplyLocal([]protocol.Op{d.op(protocol.Items, req.Item, "checked", req.On)})
 		return opReply(res, err)
@@ -242,8 +267,6 @@ func (h *hub) change(ch protocol.Change) {
 	})
 }
 
-const shellBodyMax = 600
-
 func (d *Daemon) stateEvent() sock.StateEvent {
 	ev := sock.StateEvent{Event: "state", Status: d.Status(), Notes: []sock.ShellNote{}}
 	s, err := d.rep.Snapshot()
@@ -252,22 +275,15 @@ func (d *Daemon) stateEvent() sock.StateEvent {
 		return ev
 	}
 	for _, n := range s.Notes {
-		if n.Trashed != "" {
-			continue
-		}
 		st := notes.StateOf(s, n.ID)
 		sn := sock.ShellNote{
-			ID: n.ID, Title: notes.Title(n), Kind: n.Kind, Color: n.Color, Pinned: st.Pinned,
-			Archived: st.Archived, Shared: len(notes.MembersOf(s, n.ID)) > 0 || n.Owner != ev.User.ID,
-			Items: []sock.ShellItem{}, Attachments: len(notes.AttachmentsOf(s, n.ID)), Updated: n.Updated,
+			ID: n.ID, Title: n.Title, Label: notes.Title(n), Kind: n.Kind, Color: n.Color, Body: n.Body,
+			Pinned: st.Pinned, Archived: st.Archived, Trashed: n.Trashed != "", Owned: n.Owner == ev.User.ID,
+			Shared: len(notes.MembersOf(s, n.ID)) > 0 || n.Owner != ev.User.ID,
+			Items:  []sock.ShellItem{}, Files: []sock.ShellFile{}, Updated: n.Updated,
 		}
 		if !st.ReminderDone {
 			sn.Reminder = st.Reminder
-		}
-		if body := []rune(strings.TrimSpace(n.Body)); len(body) > shellBodyMax {
-			sn.Body = string(body[:shellBodyMax]) + "…"
-		} else {
-			sn.Body = string(body)
 		}
 		items := notes.ItemsOf(s, n.ID)
 		sort.SliceStable(items, func(i, j int) bool { return items[i].Order < items[j].Order })
@@ -278,6 +294,10 @@ func (d *Daemon) stateEvent() sock.StateEvent {
 			} else {
 				sn.Open++
 			}
+		}
+		for _, a := range notes.AttachmentsOf(s, n.ID) {
+			sn.Files = append(sn.Files, sock.ShellFile{ID: a.ID, Name: a.Name, Size: a.Size, Type: a.Type,
+				Image: strings.HasPrefix(a.Type, "image/"), Pending: a.Pending})
 		}
 		ev.Notes = append(ev.Notes, sn)
 	}
