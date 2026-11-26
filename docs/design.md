@@ -184,3 +184,27 @@ There is no push service: no FCM, no ntfy.
 - **Shared-note activity** reaches a phone through a `remoteMessaging` foreground service
   holding the SSE stream, with a battery optimization exemption. A WorkManager sync every
   15 minutes is the fallback.
+
+## Later: suggested labels
+
+Not built yet. Agreed design, 2026-11-26:
+
+- **The server decides**, so the key stays off devices and every client gets it: chit-server
+  holds the OpenRouter key and answers per person (labels are personal state).
+- **Jev first** (`typesafe/jev-1.13`, OpenRouter Decisions API): one `noul` question per
+  existing label, all in one call. The state carries the note (title, text, open items) and,
+  for each label, a few titles of notes already under it, so a bare name like "Home" has
+  meaning. Code, not Jev, filters and trims the state.
+- **Bands:** high confidence applies the label with an Undo (only once tuned; at first
+  everything is a suggestion); middling is offered; nothing fits goes to a cheap generative
+  model (Claude Haiku 5.5 or Gemini Flash-Lite) for a new name, given the existing labels so it
+  doesn't coin "Shopping" beside "Groceries". Code folds near-duplicates (case, plurals) into an
+  existing label.
+- **Not a dialog:** when a new note closes, a suggestion appears ("Label as Recipes? ✓ /
+  Other…"); Other opens the full picker with the model's alternatives and existing labels.
+- **When it runs:** only for notes with no label, enough text, not just a picture, and no
+  suggestion already dismissed. Never while typing.
+- **Privacy:** note text goes to OpenRouter and the model's provider, so each person can turn
+  suggestions off.
+- **Tuning:** log every suggestion with the person's accept or reject; set the auto-apply
+  threshold from those choices, then pin the Jev version.
