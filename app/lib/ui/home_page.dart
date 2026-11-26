@@ -310,20 +310,22 @@ class _Empty extends StatelessWidget {
       padding: const EdgeInsets.only(top: 96),
       child: Column(
         children: [
-          DecoratedBox(
-            decoration: ShapeDecoration(
-              color: scheme.primaryContainer,
-              shape: MaterialShapeBorder(shape: MaterialShapes.cookie9Sided),
+          // an empty board is where the mark lives, bare, in primary: chit,
+          // waiting for its first note; other shelves and searches keep their
+          // glyph on the Expressive cookie
+          if (shelf == Shelf.notes && !searching)
+            const ChitMark(size: 80, semanticLabel: null)
+          else
+            DecoratedBox(
+              decoration: ShapeDecoration(
+                color: scheme.primaryContainer,
+                shape: MaterialShapeBorder(shape: MaterialShapes.cookie9Sided),
+              ),
+              child: SizedBox.square(
+                dimension: 96,
+                child: Icon(searching ? Icons.search_off : shelf.icon, size: 40, color: scheme.onPrimaryContainer),
+              ),
             ),
-            child: SizedBox.square(
-              dimension: 96,
-              // an empty board is where the mark lives: chit, waiting for
-              // its first note; other shelves and searches keep their glyph
-              child: shelf == Shelf.notes && !searching
-                  ? Center(child: ChitMark(size: 64, color: scheme.onPrimaryContainer, semanticLabel: null))
-                  : Icon(searching ? Icons.search_off : shelf.icon, size: 40, color: scheme.onPrimaryContainer),
-            ),
-          ),
           const SizedBox(height: 24),
           Text(text, style: Theme.of(context).textTheme.titleMedium?.copyWith(color: scheme.onSurfaceVariant)),
         ],
