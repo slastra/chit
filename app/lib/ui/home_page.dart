@@ -316,12 +316,12 @@ class _Empty extends StatelessWidget {
               shape: MaterialShapeBorder(shape: MaterialShapes.cookie9Sided),
             ),
             child: SizedBox.square(
-              dimension: 120,
+              dimension: 96,
               // an empty board is where the mark lives: chit, waiting for
               // its first note; other shelves and searches keep their glyph
               child: shelf == Shelf.notes && !searching
-                  ? Center(child: ChitMark(size: 84, color: scheme.onPrimaryContainer, semanticLabel: null))
-                  : Icon(searching ? Icons.search_off : shelf.icon, size: 48, color: scheme.onPrimaryContainer),
+                  ? Center(child: ChitMark(size: 64, color: scheme.onPrimaryContainer, semanticLabel: null))
+                  : Icon(searching ? Icons.search_off : shelf.icon, size: 40, color: scheme.onPrimaryContainer),
             ),
           ),
           const SizedBox(height: 24),
