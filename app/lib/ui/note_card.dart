@@ -46,6 +46,10 @@ class NoteCard extends ConsumerWidget {
         (library.members[note.id]?.isNotEmpty ?? false) || note.owner != ref.watch(sessionProvider).value?.user.id;
     final reminder = state.reminderDone ? '' : state.reminder;
 
+    // the "Empty note" placeholder is for notes with nothing at all: a
+    // note of only images or files shows just those
+    final showTitle = note.title.isNotEmpty || (note.body.isEmpty && items.isEmpty && files.isEmpty);
+    final hasText = showTitle || (!note.isList && note.body.isNotEmpty) || (note.isList && open.isNotEmpty);
     final more = open.length - _itemsShown;
     final hasFooter = reminder.isNotEmpty || shared || others.isNotEmpty || (note.isList && (more > 0 || done > 0));
     final rule = scheme?.onPrimaryContainer.withValues(alpha: 0.16) ?? theme.colorScheme.outlineVariant;
@@ -58,40 +62,41 @@ class NoteCard extends ConsumerWidget {
           // images across the top, as Keep shows them
           if (images.isNotEmpty) _CardImages(images: images),
           // content: title, then the text or the open items
-          Padding(
-            padding: EdgeInsets.fromLTRB(16, 16, 16, hasFooter ? 12 : 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              spacing: 6,
-              children: [
-                if (note.title.isNotEmpty || (note.body.isEmpty && items.isEmpty))
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          note.label.isEmpty ? 'Empty note' : note.label,
-                          style: text.titleMedium?.copyWith(color: ink),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
+          if (hasText)
+            Padding(
+              padding: EdgeInsets.fromLTRB(16, 16, 16, hasFooter ? 12 : 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                spacing: 6,
+                children: [
+                  if (showTitle)
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            note.label.isEmpty ? 'Empty note' : note.label,
+                            style: text.titleMedium?.copyWith(color: ink),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
-                      ),
-                      if (state.pinned) Icon(Icons.push_pin, size: 16, color: faint),
-                    ],
-                  ),
-                if (!note.isList && note.body.isNotEmpty)
-                  Text(
-                    note.body,
-                    style: text.bodyMedium?.copyWith(color: ink),
-                    maxLines: 10,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                if (note.isList)
-                  for (final it in open.take(_itemsShown))
-                    _ItemLine(item: it, ink: ink, onCheck: () => _check(ref, it)),
-              ],
+                        if (state.pinned) Icon(Icons.push_pin, size: 16, color: faint),
+                      ],
+                    ),
+                  if (!note.isList && note.body.isNotEmpty)
+                    Text(
+                      note.body,
+                      style: text.bodyMedium?.copyWith(color: ink),
+                      maxLines: 10,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  if (note.isList)
+                    for (final it in open.take(_itemsShown))
+                      _ItemLine(item: it, ink: ink, onCheck: () => _check(ref, it)),
+                ],
+              ),
             ),
-          ),
           // footer: the note's specifics, below a hairline (Material's card
           // anatomy: a separate bottom region for metadata and actions)
           if (hasFooter) ...[
