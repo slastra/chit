@@ -164,10 +164,11 @@ class _NoteCardState extends ConsumerState<NoteCard> {
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
                             if (reminder.isNotEmpty)
-                              _ReminderChip(
+                              _Mark(
+                                icon: Icons.alarm,
                                 label: reminderLabel(reminderTime(reminder)!),
-                                scheme: scheme,
-                                onPressed: () => context.push('/note/${note.id}'),
+                                ink: faint,
+                                tooltip: 'Reminder',
                               ),
                             if (note.isList && more > 0) _Mark(label: '$more more', ink: faint),
                             if (showDone) _Mark(icon: Icons.check, label: '$done checked', ink: faint),
@@ -240,9 +241,6 @@ class _NoteCardState extends ConsumerState<NoteCard> {
     if (engine == null) return;
     engine.edit([engine.op(Collections.items, it.id, 'checked', true)]);
   }
-
-  /// A reminder as a chip can show it on a phone-width card: "Today 9 AM",
-  /// "Fri 9:30 AM" within the week, then "Dec 4 9 AM".
 }
 
 /// An open item on the card. Checked here, its box fills and its text is
@@ -395,28 +393,6 @@ class _Mark extends StatelessWidget {
       ],
     );
     return tooltip == null ? mark : Tooltip(message: tooltip, child: mark);
-  }
-}
-
-/// A reminder, as Material's assist chip (Flutter's ActionChip: 32dp, small
-/// corners, an 18dp icon, a hairline outline): it opens the note, where the
-/// reminder is set. On a colored note it takes that color's ink.
-class _ReminderChip extends StatelessWidget {
-  const _ReminderChip({required this.label, required this.scheme, required this.onPressed});
-  final String label;
-  final ColorScheme? scheme;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = scheme;
-    return ActionChip(
-      avatar: Icon(Icons.alarm, color: cs?.onPrimaryContainer),
-      label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
-      labelStyle: cs == null ? null : TextStyle(color: cs.onPrimaryContainer),
-      side: cs == null ? null : BorderSide(color: cs.onPrimaryContainer.withValues(alpha: 0.3)),
-      onPressed: onPressed,
-    );
   }
 }
 
