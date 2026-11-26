@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:desktop_drop/desktop_drop.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -9,6 +10,7 @@ import '../core/protocol.dart';
 import '../data/media.dart';
 import '../data/replica.dart';
 import '../data/sync.dart';
+import '../notifications.dart';
 import '../state/providers.dart';
 import 'attachments.dart';
 import 'board_drag.dart';
@@ -462,6 +464,7 @@ class _Account extends ConsumerWidget {
             ],
           ),
         ),
+        if (notificationsSupported) ...[const Divider(height: 1), const _NotifyToggle(), const _BackgroundSync()],
         const Divider(height: 1),
         MenuItemButton(
           leadingIcon: const Icon(Icons.logout),
@@ -469,6 +472,59 @@ class _Account extends ConsumerWidget {
           child: const Text('Sign out'),
         ),
       ],
+    );
+  }
+}
+
+/// Whether this phone tells of other people's edits to shared notes.
+final _notifyActivityProvider = FutureProvider<bool>((ref) => activityEnabled(ref.watch(replicaProvider)));
+
+class _NotifyToggle extends ConsumerWidget {
+  const _NotifyToggle();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final on = ref.watch(_notifyActivityProvider).value ?? true;
+    return CheckboxMenuButton(
+      value: on,
+      closeOnActivate: false,
+      onChanged: (v) async {
+        await setActivityEnabled(ref.read(replicaProvider), v ?? false);
+        if (v ?? false) await askNotificationPermission();
+        ref.invalidate(_notifyActivityProvider);
+      },
+      child: const Text('Notify me about shared edits'),
+    );
+  }
+}
+
+const _power = MethodChannel('chit/power');
+
+/// Whether Android leaves the background catch-up alone (no battery
+/// optimization); null where it doesn't apply.
+final _exemptProvider = FutureProvider<bool?>((ref) async {
+  try {
+    return await _power.invokeMethod<bool>('exempt');
+  } on MissingPluginException {
+    return null;
+  }
+});
+
+/// Offers to exempt chit from battery optimization, which otherwise
+/// stretches the 15-minute catch-up to hours. Gone once granted.
+class _BackgroundSync extends ConsumerWidget {
+  const _BackgroundSync();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (ref.watch(_exemptProvider).value != false) return const SizedBox.shrink();
+    return MenuItemButton(
+      leadingIcon: const Icon(Icons.battery_saver_outlined),
+      onPressed: () async {
+        await _power.invokeMethod<void>('ask');
+        ref.invalidate(_exemptProvider);
+      },
+      child: const Text('Sync in the background'),
     );
   }
 }

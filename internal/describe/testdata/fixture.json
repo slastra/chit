@@ -1,0 +1,47 @@
+{
+  "me": "shaun",
+  "names": {"angelica": "Angelica", "angelo": "Angelo", "shaun": "Shaun"},
+  "snapshot": {
+    "seq": 10,
+    "notes": [
+      {"id": "groc", "owner": "shaun", "kind": "list", "title": "Groceries"},
+      {"id": "trip", "owner": "shaun", "kind": "text", "title": "", "body": "Flights on Friday\nhotel later"}
+    ],
+    "items": [
+      {"id": "milk", "note": "groc", "text": "milk", "order": "1"},
+      {"id": "eggs", "note": "groc", "text": "eggs", "order": "2"}
+    ],
+    "members": [
+      {"id": "m1", "note": "groc", "user": "angelica", "role": "editor"}
+    ],
+    "attachments": [
+      {"id": "pic", "note": "trip", "file": "p.jpg", "name": "beach.jpg"}
+    ],
+    "state": [], "labels": []
+  },
+  "changes": [
+    {"kind": "set", "collection": "items", "record": "milk", "field": "checked", "value": true, "by": "angelica"},
+    {"kind": "set", "collection": "items", "record": "eggs", "field": "checked", "value": false, "by": "angelica"},
+    {"kind": "record", "collection": "items", "record": "bread", "value": {"id": "bread", "note": "groc", "text": "bread", "order": "3"}, "by": "angelica"},
+    {"kind": "set", "collection": "items", "record": "bread", "field": "text", "value": "rye bread", "by": "angelica"},
+    {"kind": "set", "collection": "items", "record": "eggs", "field": "deleted", "value": true, "by": "angelo"},
+    {"kind": "set", "collection": "items", "record": "milk", "field": "order", "value": "4", "by": "angelica"},
+    {"kind": "set", "collection": "notes", "record": "groc", "field": "title", "value": "Shopping", "by": "angelica"},
+    {"kind": "set", "collection": "notes", "record": "trip", "field": "body", "value": "x", "by": "angelica"},
+    {"kind": "set", "collection": "notes", "record": "trip", "field": "color", "value": "blue", "by": "angelica"},
+    {"kind": "set", "collection": "notes", "record": "trip", "field": "trashed", "value": "2026-11-26", "by": "angelica"},
+    {"kind": "set", "collection": "notes", "record": "trip", "field": "trashed", "value": "", "by": "angelica"},
+    {"kind": "record", "collection": "notes", "record": "new1", "value": {"id": "new1", "owner": "angelo", "kind": "list", "title": "Lego"}, "by": "angelo"},
+    {"kind": "record", "collection": "attachments", "record": "doc", "value": {"id": "doc", "note": "trip", "name": "plan.pdf"}, "by": "angelica"},
+    {"kind": "set", "collection": "attachments", "record": "pic", "field": "deleted", "value": true, "by": "angelica"},
+    {"kind": "record", "collection": "note_members", "record": "m2", "value": {"id": "m2", "note": "groc", "user": "angelo", "role": "viewer"}, "by": "shaun"},
+    {"kind": "record", "collection": "note_members", "record": "m1", "value": {"id": "m1", "note": "groc", "user": "angelica", "role": "editor"}, "by": "shaun"},
+    {"kind": "remove", "collection": "note_members", "record": "m2", "by": "shaun"},
+    {"kind": "remove", "collection": "note_members", "record": "m1", "by": "angelica"},
+    {"kind": "set", "collection": "note_state", "record": "groc", "field": "pinned", "value": true, "by": "shaun"},
+    {"kind": "set", "collection": "note_state", "record": "groc", "field": "archived", "value": false, "by": "shaun"},
+    {"kind": "set", "collection": "note_state", "record": "groc", "field": "reminder", "value": "2026-11-27T08:00:00Z", "by": "shaun"},
+    {"kind": "revoke", "collection": "notes", "record": "trip", "by": "angelica"},
+    {"kind": "set", "collection": "notes", "record": "zzz", "field": "body", "value": "x", "by": "stranger"}
+  ]
+}

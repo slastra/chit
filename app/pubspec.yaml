@@ -15,6 +15,7 @@ dependencies:
   file_picker: ^13.4.1
   flutter:
     sdk: flutter
+  flutter_local_notifications: ^23.0.4
   flutter_riverpod: ^3.5.0
   flutter_svg: ^2.5.1
   go_router: ^18.1.4
@@ -29,6 +30,8 @@ dependencies:
   pdfrx: ^3.1.0
   record: ^7.2.0
   sqlite3: ^3.9.2
+  timezone: ^0.11.2
+  workmanager: ^0.10.10
 
 dev_dependencies:
   flutter_test:

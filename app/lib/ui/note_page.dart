@@ -19,6 +19,7 @@ import 'note_colors.dart';
 import 'app.dart' show themeSpecProvider;
 import 'attachments.dart';
 import 'check_motion.dart';
+import '../notifications.dart';
 import 'reminder_picker.dart';
 import 'share_sheet.dart';
 import 'feedback.dart';
@@ -191,13 +192,17 @@ class _NotePageState extends ConsumerState<NotePage> {
   void _setNote(String field, Object? value) => _edit(() => [_op(Collections.notes, _id, field, value)]);
   void _setState(String field, Object? value) => _edit(() => [_op(Collections.noteState, _id, field, value)]);
 
-  /// Sets the reminder (and makes it pending again), or clears it.
-  void _remind(DateTime? at) => _edit(
-    () => [
-      _op(Collections.noteState, _id, 'reminder', at == null ? '' : reminderWire(at)),
-      _op(Collections.noteState, _id, 'reminder_done', false),
-    ],
-  );
+  /// Sets the reminder (and makes it pending again), or clears it. The
+  /// first one set is when the phone asks to notify.
+  void _remind(DateTime? at) {
+    _edit(
+      () => [
+        _op(Collections.noteState, _id, 'reminder', at == null ? '' : reminderWire(at)),
+        _op(Collections.noteState, _id, 'reminder_done', false),
+      ],
+    );
+    if (at != null) unawaited(askNotificationPermission());
+  }
 
   // ---- files -----------------------------------------------------------------
 

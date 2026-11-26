@@ -4,6 +4,8 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
 import io.flutter.embedding.android.FlutterActivity
@@ -23,6 +25,20 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "chit/system_colors").setMethodCallHandler { call, result ->
             when (call.method) {
                 "scheme" -> result.success(systemScheme())
+                else -> result.notImplemented()
+            }
+        }
+        // whether the background catch-up is exempt from battery
+        // optimization, and asking for it (the system's own dialog)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "chit/power").setMethodCallHandler { call, result ->
+            val power = getSystemService(PowerManager::class.java)
+            when (call.method) {
+                "exempt" -> result.success(power.isIgnoringBatteryOptimizations(packageName))
+                "ask" -> {
+                    @Suppress("BatteryLife")
+                    startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
+                    result.success(null)
+                }
                 else -> result.notImplemented()
             }
         }

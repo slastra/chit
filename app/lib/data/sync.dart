@@ -47,6 +47,10 @@ final class SyncEngine {
   /// A file the server turned away (too large, no longer allowed), with why.
   final void Function(String name, String reason)? onUploadFailed;
 
+  /// Hears each change the stream brings, with its feed position, before
+  /// it is applied (the phone's shared-edit notifications).
+  Future<void> Function(int seq, Change change)? onRemoteChange;
+
   /// How far each running upload has got, 0 to 1, by attachment id.
   final _progress = StreamController<Map<String, double>>.broadcast();
   final Map<String, double> _uploading = {};
@@ -133,6 +137,11 @@ final class SyncEngine {
                   _set(SyncPhase.online);
                   unawaited(flush());
                 case ChangeEvent(:final seq, :final change):
+                  try {
+                    await onRemoteChange?.call(seq, change);
+                  } catch (_) {
+                    // a notification is never worth the stream
+                  }
                   await replica.applyChanges([change], seq);
                   if (change.hlc.isNotEmpty) clock.observe(change.hlc);
                 case CursorEvent(:final seq):

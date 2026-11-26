@@ -1,0 +1,94 @@
+[
+  {
+    "note": "groc",
+    "sentence": "Angelica checked \"milk\" in Groceries"
+  },
+  {
+    "note": "groc",
+    "sentence": "Angelica unchecked \"eggs\" in Groceries"
+  },
+  {
+    "note": "groc",
+    "sentence": "Angelica added \"bread\" to Groceries"
+  },
+  {
+    "note": "groc",
+    "sentence": "Angelica changed \"bread\" to \"rye bread\" in Groceries"
+  },
+  {
+    "note": "groc",
+    "sentence": "Angelo removed \"eggs\" from Groceries"
+  },
+  {
+    "note": "groc",
+    "sentence": "Angelica rearranged Groceries"
+  },
+  {
+    "note": "groc",
+    "sentence": "Angelica renamed Groceries to \"Shopping\""
+  },
+  {
+    "note": "trip",
+    "sentence": "Angelica edited Flights on Friday"
+  },
+  {
+    "note": "trip",
+    "sentence": "Angelica colored Flights on Friday blue"
+  },
+  {
+    "note": "trip",
+    "sentence": "Angelica moved Flights on Friday to the trash"
+  },
+  {
+    "note": "trip",
+    "sentence": "Angelica restored Flights on Friday"
+  },
+  {
+    "note": "new1",
+    "sentence": "Angelo: new list \"Lego\""
+  },
+  {
+    "note": "trip",
+    "sentence": "Angelica attached plan.pdf to Flights on Friday"
+  },
+  {
+    "note": "trip",
+    "sentence": "Angelica removed beach.jpg from Flights on Friday"
+  },
+  {
+    "note": "groc",
+    "sentence": "You shared Shopping with Angelo (viewer)"
+  },
+  {
+    "note": "groc",
+    "sentence": ""
+  },
+  {
+    "note": "groc",
+    "sentence": "You stopped sharing Shopping with Angelo"
+  },
+  {
+    "note": "groc",
+    "sentence": "Angelica left Shopping"
+  },
+  {
+    "note": "groc",
+    "sentence": "You pinned Shopping"
+  },
+  {
+    "note": "groc",
+    "sentence": "You unarchived Shopping"
+  },
+  {
+    "note": "groc",
+    "sentence": "You set a reminder on Shopping"
+  },
+  {
+    "note": "trip",
+    "sentence": "You no longer have access to Flights on Friday"
+  },
+  {
+    "note": "zzz",
+    "sentence": "Someone edited a note"
+  }
+]

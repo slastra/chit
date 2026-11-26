@@ -10,6 +10,7 @@ import '../data/media.dart';
 import '../data/sync.dart';
 import '../state/providers.dart';
 import 'feedback.dart';
+import 'phone_notifications.dart';
 import 'share_in.dart';
 import 'home_page.dart';
 import 'login_page.dart';
@@ -114,6 +115,7 @@ class ChitApp extends ConsumerStatefulWidget {
 class _ChitAppState extends ConsumerState<ChitApp> {
   late final AppLifecycleListener _lifecycle;
   late final _inbox = ShareInbox(_received);
+  late final _notifications = PhoneNotifications(ref, open: (note) => ref.read(_router).push('/note/$note'));
 
   /// Shares that came in before there was anyone signed in to keep them.
   final _held = <Shared>[];
@@ -123,11 +125,13 @@ class _ChitAppState extends ConsumerState<ChitApp> {
     super.initState();
     _lifecycle = AppLifecycleListener(onResume: () => ref.invalidate(systemSchemeProvider));
     _inbox.start();
+    unawaited(_notifications.start());
   }
 
   @override
   void dispose() {
     _inbox.stop();
+    _notifications.stop();
     _lifecycle.dispose();
     super.dispose();
   }
