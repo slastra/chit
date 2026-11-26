@@ -59,7 +59,11 @@ class _HomePageState extends ConsumerState<HomePage> {
       };
     }
 
-    return lib.notes.where((n) => onShelf(n) && hit(n)).toList()..sort((a, b) => b.updated.compareTo(a.updated));
+    // Newest first by when a note was made, as Keep keeps them: editing a
+    // note (checking an item on its card, typing in it) does not move it,
+    // so the board never reshuffles under the hand.
+    return lib.notes.where((n) => onShelf(n) && hit(n)).toList()
+      ..sort((a, b) => b.created.compareTo(a.created) != 0 ? b.created.compareTo(a.created) : b.id.compareTo(a.id));
   }
 
   void _pick(Shelf s) => setState(() => _shelf = s);
