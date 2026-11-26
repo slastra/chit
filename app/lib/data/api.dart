@@ -171,6 +171,17 @@ final class ChitApi {
     return resp.stream;
   }
 
+  /// Changes since [since], a page at a time: [more] when the page was
+  /// full (ask again from [seq]).
+  Future<({List<Change> changes, int seq, bool more})> changes(int since) async {
+    final j = (await _send('GET', '/api/chit/changes?since=$since'))! as Json;
+    return (
+      changes: [for (final c in (j['changes'] as List? ?? const [])) Change.fromJson((c as Map).cast())],
+      seq: (j['seq'] as num?)?.toInt() ?? since,
+      more: j['more'] == true,
+    );
+  }
+
   Future<Snapshot> snapshot() async => Snapshot.fromJson((await _send('GET', '/api/chit/snapshot'))! as Json);
 
   Future<({int seq, List<OpResult> results})> ops(List<Op> ops) async {

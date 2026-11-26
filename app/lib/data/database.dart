@@ -1,8 +1,18 @@
 import 'package:drift/drift.dart';
+import 'package:sqlite3/common.dart' show CommonDatabase;
 import 'package:drift_flutter/drift_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 
 part 'database.g.dart';
+
+/// Every connection to the file: write-ahead logging, so a reader never
+/// blocks a writer, and a wait instead of an instant "database is locked"
+/// when two writers meet (the app and its background sync on Android are
+/// separate Flutter engines, each with its own connection).
+void configureConnection(CommonDatabase db) {
+  db.execute('PRAGMA journal_mode=WAL');
+  db.execute('PRAGMA busy_timeout=5000');
+}
 
 /// Every record the user can see, as its wire JSON. Merged field by field
 /// with the per-field clocks inside `data` (see replica.dart).
@@ -73,7 +83,7 @@ class ChitDb extends _$ChitDb {
   // the app's own ($XDG_DATA_HOME/us.lastra.chit), private on every OS.
   static QueryExecutor _open() => driftDatabase(
     name: 'chit',
-    native: const DriftNativeOptions(databaseDirectory: getApplicationSupportDirectory),
+    native: const DriftNativeOptions(databaseDirectory: getApplicationSupportDirectory, setup: configureConnection),
     web: DriftWebOptions(sqlite3Wasm: Uri.parse('sqlite3.wasm'), driftWorker: Uri.parse('drift_worker.js')),
   );
 }

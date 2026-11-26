@@ -102,12 +102,14 @@ final class Replica {
     await setMeta('cursor', '${s.seq}');
   });
 
-  /// Merges feed changes and moves the cursor, atomically.
+  /// Merges feed changes and moves the cursor, atomically. The cursor only
+  /// moves forward: the live stream and a background catch-up may both
+  /// apply the same stretch, in either order.
   Future<void> applyChanges(List<Change> changes, int cursor) => db.transaction(() async {
     for (final c in changes) {
       await _applyChange(c);
     }
-    await setMeta('cursor', '$cursor');
+    if (cursor > await this.cursor()) await setMeta('cursor', '$cursor');
   });
 
   Future<void> _applyChange(Change c) async {

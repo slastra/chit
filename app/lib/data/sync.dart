@@ -4,6 +4,7 @@ import 'dart:math';
 import '../core/hlc.dart';
 import '../core/protocol.dart';
 import 'api.dart';
+import 'catch_up.dart';
 import 'database.dart';
 import 'replica.dart';
 
@@ -85,8 +86,14 @@ final class SyncEngine {
   Future<void> start() async {
     if (_running) return;
     _running = true;
-    for (final n in (await replica.read()).notes) {
+    // every clock this replica has seen, so an edit here (a reminder's
+    // Done, say) is never stamped behind another device's
+    final lib = await replica.read();
+    for (final n in lib.notes) {
       n.clocks.values.forEach(clock.observe);
+    }
+    for (final st in lib.states.values) {
+      st.clocks.values.forEach(clock.observe);
     }
     unawaited(_loop());
   }
@@ -271,13 +278,7 @@ final class SyncEngine {
     try {
       do {
         _flushAgain = false;
-        while (_running) {
-          final queued = await replica.pending(limit: 500);
-          if (queued.isEmpty) break;
-          final resp = await api.ops([for (final q in queued) q.op]);
-          await replica.ack(queued.map((q) => q.seq));
-          if (resp.results.any((r) => r.error != null)) await _loadSnapshot();
-        }
+        if (_running && await flushOnce(replica, api)) await _loadSnapshot();
       } while (_flushAgain && _running);
       // the notes now exist on the server, so their files can follow
       if (_running) unawaited(sendUploads());
