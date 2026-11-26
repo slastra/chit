@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -18,10 +19,16 @@ import 'note_colors.dart';
 /// outlined card; a colored one fills with its color's tonal container (as
 /// Keep draws them). Lists check off right on the card.
 class NoteCard extends ConsumerStatefulWidget {
-  const NoteCard({super.key, required this.note, required this.library});
+  const NoteCard({super.key, required this.note, required this.library, this.onMove, this.onMoveTop});
 
   final Note note;
   final Library library;
+
+  /// Moves the note earlier (-1) or later (+1) on the board, and to the
+  /// top: Alt+arrows on a focused card, and screen readers' actions. Null
+  /// where the board cannot be arranged (archive, trash, a search).
+  final void Function(int by)? onMove;
+  final VoidCallback? onMoveTop;
 
   @override
   ConsumerState<NoteCard> createState() => _NoteCardState();
@@ -187,7 +194,7 @@ class _NoteCardState extends ConsumerState<NoteCard> {
     final corners = theme.cardTheme.shape is RoundedRectangleBorder
         ? (theme.cardTheme.shape! as RoundedRectangleBorder).borderRadius
         : const BorderRadius.all(Radius.circular(12));
-    return scheme == null
+    final card = scheme == null
         ? Card.outlined(
             color: theme.colorScheme.surface,
             shape: RoundedRectangleBorder(
@@ -197,6 +204,22 @@ class _NoteCardState extends ConsumerState<NoteCard> {
             child: body,
           )
         : Card.filled(color: scheme.primaryContainer, child: body);
+    final move = widget.onMove;
+    if (move == null) return card;
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.arrowUp, alt: true): () => move(-1),
+        const SingleActivator(LogicalKeyboardKey.arrowDown, alt: true): () => move(1),
+      },
+      child: Semantics(
+        customSemanticsActions: {
+          const CustomSemanticsAction(label: 'Move earlier'): () => move(-1),
+          const CustomSemanticsAction(label: 'Move later'): () => move(1),
+          if (widget.onMoveTop != null) const CustomSemanticsAction(label: 'Move to top'): widget.onMoveTop!,
+        },
+        child: card,
+      ),
+    );
   }
 
   void _check(WidgetRef ref, Item it) {

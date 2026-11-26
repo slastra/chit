@@ -164,6 +164,9 @@ final class NoteState {
   List<String> get labels => [...((json['labels'] as List?) ?? const []).cast<String>()];
   String get reminder => json['reminder'] as String? ?? '';
   bool get reminderDone => json['reminder_done'] == true;
+
+  /// Where this person put the note on their board ("" until moved).
+  String get order => json['order'] as String? ?? '';
   Clocks get clocks => _clocks(json['clocks']);
 }
 

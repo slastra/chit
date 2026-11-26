@@ -4,12 +4,14 @@ import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../core/board_order.dart';
 import '../core/protocol.dart';
 import '../data/media.dart';
 import '../data/replica.dart';
 import '../data/sync.dart';
 import '../state/providers.dart';
 import 'attachments.dart';
+import 'board_drag.dart';
 import 'brand.dart';
 import 'create.dart';
 import 'feedback.dart';
@@ -42,6 +44,103 @@ class _HomePageState extends ConsumerState<HomePage> {
   Shelf _shelf = Shelf.notes;
   String _query = '';
   final _scaffold = GlobalKey<ScaffoldState>();
+  final _gridKey = GlobalKey();
+  late final _drag = BoardDrag(gridKey: _gridKey, cardFor: _liftedCard, onDrop: _onDrop)
+    ..addListener(() {
+      if (mounted) setState(() {});
+    });
+  late final AppLifecycleListener _lifecycle;
+
+  @override
+  void initState() {
+    super.initState();
+    // a drag does not survive the app going away
+    _lifecycle = AppLifecycleListener(onHide: _drag.cancel, onPause: _drag.cancel);
+  }
+
+  /// After a drop, the order the board shows until the library has it (or
+  /// a second passes), so nothing jumps back while the edit lands.
+  ({List<String> pinned, List<String> others})? _held;
+  Timer? _heldTimer;
+
+  @override
+  void dispose() {
+    _heldTimer?.cancel();
+    _lifecycle.dispose();
+    _drag.dispose();
+    super.dispose();
+  }
+
+  Widget _liftedCard(String id) {
+    final lib = ref.read(libraryProvider).value ?? Library.empty;
+    final n = lib.notes.where((n) => n.id == id).firstOrNull;
+    return n == null ? const SizedBox.shrink() : NoteCard(note: n, library: lib);
+  }
+
+  /// The board's sections in order: by where you put notes, pinned first.
+  ({List<Note> pinned, List<Note> others}) _sections(Library lib, List<Note> shown) {
+    final pinned = shown.where((n) => lib.stateOf(n.id).pinned).toList();
+    final others = shown.where((n) => !lib.stateOf(n.id).pinned).toList();
+    return (pinned: pinned, others: others);
+  }
+
+  /// [ids] with [moved] put at [a].
+  static ({List<String> pinned, List<String> others}) _place(
+    ({List<String> pinned, List<String> others}) ids,
+    String moved,
+    Anchor a,
+  ) {
+    final pinned = [...ids.pinned]..remove(moved);
+    final others = [...ids.others]..remove(moved);
+    final dest = a.pinned ? pinned : others;
+    final at = a.before == null ? -1 : dest.indexOf(a.before!);
+    dest.insert(at < 0 ? dest.length : at, moved);
+    return (pinned: pinned, others: others);
+  }
+
+  /// The note dropped at [a]: the fewest state edits that put it there.
+  void _onDrop(String id, Anchor a) {
+    final engine = ref.read(engineProvider);
+    final lib = ref.read(libraryProvider).value;
+    if (engine == null || lib == null) return;
+    final base = _sections(lib, _shown(lib));
+    final dest = (a.pinned ? base.pinned : base.others).where((n) => n.id != id).toList();
+    final at = a.before == null ? dest.length : dest.indexWhere((n) => n.id == a.before);
+    final ops = planMove(
+      section: dest,
+      states: lib.states,
+      moved: id,
+      index: at < 0 ? dest.length : at,
+      toPinned: a.pinned,
+      wasPinned: lib.stateOf(id).pinned,
+    );
+    _hold(_place((pinned: [for (final n in base.pinned) n.id], others: [for (final n in base.others) n.id]), id, a));
+    unawaited(engine.edit([for (final o in ops) engine.op(Collections.noteState, o.note, o.field, o.value)]));
+  }
+
+  void _hold(({List<String> pinned, List<String> others}) order) {
+    _heldTimer?.cancel();
+    setState(() => _held = order);
+    _heldTimer = Timer(const Duration(seconds: 1), () {
+      if (mounted) setState(() => _held = null);
+    });
+  }
+
+  /// Moves [id] within its section by [by] places (Alt+arrows, and screen
+  /// readers' Move earlier/later), or to the top.
+  void _moveBy(String id, {int by = 0, bool top = false}) {
+    final lib = ref.read(libraryProvider).value;
+    if (lib == null) return;
+    final base = _sections(lib, _shown(lib));
+    final pinned = lib.stateOf(id).pinned;
+    final list = pinned ? base.pinned : base.others;
+    final from = list.indexWhere((n) => n.id == id);
+    if (from < 0) return;
+    final to = top ? 0 : (from + by).clamp(0, list.length - 1);
+    if (to == from) return;
+    final rest = [...list]..removeAt(from);
+    _onDrop(id, (pinned: pinned, before: to < rest.length ? rest[to].id : null));
+  }
 
   List<Note> _shown(Library lib) {
     final q = _query.trim().toLowerCase();
@@ -59,11 +158,15 @@ class _HomePageState extends ConsumerState<HomePage> {
       };
     }
 
-    // Newest first by when a note was made, as Keep keeps them: editing a
-    // note (checking an item on its card, typing in it) does not move it,
-    // so the board never reshuffles under the hand.
-    return lib.notes.where((n) => onShelf(n) && hit(n)).toList()
-      ..sort((a, b) => b.created.compareTo(a.created) != 0 ? b.created.compareTo(a.created) : b.id.compareTo(a.id));
+    // The Notes shelf in board order (where you put them; new notes on
+    // top). Archive and trash newest made first. Editing never moves a note.
+    final list = lib.notes.where((n) => onShelf(n) && hit(n)).toList();
+    if (_shelf == Shelf.notes) {
+      list.sort((a, b) => boardCompare(a, b, lib.stateOf(a.id), lib.stateOf(b.id)));
+    } else {
+      list.sort((a, b) => b.created.compareTo(a.created) != 0 ? b.created.compareTo(a.created) : b.id.compareTo(a.id));
+    }
+    return list;
   }
 
   void _pick(Shelf s) => setState(() => _shelf = s);
@@ -79,8 +182,53 @@ class _HomePageState extends ConsumerState<HomePage> {
     final lib = ref.watch(libraryProvider).value ?? Library.empty;
     final status = ref.watch(syncStatusProvider).value;
     final shown = _shown(lib);
-    final pinned = _shelf == Shelf.notes ? shown.where((n) => lib.stateOf(n.id).pinned).toList() : <Note>[];
-    final others = shown.where((n) => !pinned.contains(n)).toList();
+    final searching = _query.trim().isNotEmpty;
+    final canDrag = _shelf == Shelf.notes && !searching;
+    final base = _shelf == Shelf.notes ? _sections(lib, shown) : (pinned: <Note>[], others: shown);
+    final byId = {for (final n in shown) n.id: n};
+    final baseIds = (pinned: [for (final n in base.pinned) n.id], others: [for (final n in base.others) n.id]);
+
+    // what the board shows: the library's order, a dropped note held in its
+    // new place until the library agrees, a dragged note's slot where the
+    // pointer would put it
+    var ids = baseIds;
+    if (_held case final held?) {
+      final agrees = _same(held.pinned, baseIds.pinned) && _same(held.others, baseIds.others);
+      if (agrees) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _held == held) setState(() => _held = null);
+        });
+      } else {
+        ids = (
+          pinned: [
+            for (final i in held.pinned)
+              if (byId.containsKey(i)) i,
+          ],
+          others: [
+            for (final i in held.others)
+              if (byId.containsKey(i)) i,
+          ],
+        );
+        // anything new since the drop goes where the library puts it
+        for (final i in baseIds.pinned) {
+          if (!ids.pinned.contains(i) && !ids.others.contains(i)) ids.pinned.insert(0, i);
+        }
+        for (final i in baseIds.others) {
+          if (!ids.pinned.contains(i) && !ids.others.contains(i)) ids.others.insert(0, i);
+        }
+      }
+    }
+    if (_drag.id case final dragged? when _drag.anchor != null) {
+      if (!byId.containsKey(dragged)) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _drag.cancel());
+      } else {
+        ids = _place(ids, dragged, _drag.anchor!);
+      }
+    }
+    _drag.sections = ids;
+    final pinned = [for (final i in ids.pinned) byId[i]!];
+    final others = [for (final i in ids.others) byId[i]!];
+    final dragging = _drag.active;
     final wide = isExpanded(context);
     final theme = Theme.of(context);
     final firstSync = lib.notes.isEmpty && status?.phase != SyncPhase.online && status?.phase != SyncPhase.offline;
@@ -89,16 +237,55 @@ class _HomePageState extends ConsumerState<HomePage> {
     // snackbars float above the compact FAB (56dp and its 16dp margin)
     snackbarClearance.value = showFab ? 56 + 16 : 0;
 
-    Widget grid(List<Note> notes) => Masonry(
-      minColumnWidth: wide ? 240 : 160,
-      spacing: 12,
-      children: [for (final n in notes) NoteCard(key: ValueKey(n.id), note: n, library: lib)],
+    // Material 3 section headers: title-small, sentence case
+    Widget section(String label, String tag) => MasonryChild(
+      key: ValueKey(tag),
+      tag: tag,
+      span: true,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(4, 16, 4, 8),
+        child: Text(label, style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+      ),
     );
 
-    // Material 3 section headers: title-small, sentence case
-    Widget section(String label) => Padding(
-      padding: const EdgeInsets.fromLTRB(4, 16, 4, 8),
-      child: Text(label, style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+    Widget card(Note n) => MasonryChild(
+      key: ValueKey(n.id),
+      tag: n.id,
+      child: RepaintBoundary(
+        child: _Placeable(
+          hidden: _drag.id == n.id,
+          child: NoteCard(
+            note: n,
+            library: lib,
+            onMove: canDrag ? (by) => _moveBy(n.id, by: by) : null,
+            onMoveTop: canDrag ? () => _moveBy(n.id, top: true) : null,
+          ),
+        ),
+      ),
+    );
+
+    // one grid for both sections, so a note keeps its card (and its glide)
+    // when it is pinned or unpinned by dragging
+    final showPinned = pinned.isNotEmpty || dragging;
+    final grid = BoardGestures(
+      drag: _drag,
+      enabled: canDrag,
+      child: Masonry(
+        key: _gridKey,
+        minColumnWidth: wide ? 240 : 160,
+        spacing: 12,
+        children: [
+          if (showPinned) section('Pinned', pinnedHeader),
+          if (dragging && pinned.isEmpty)
+            const MasonryChild(key: ValueKey(pinZone), tag: pinZone, span: true, child: _PinZone()),
+          for (final n in pinned) card(n),
+          if (showPinned && (others.isNotEmpty || dragging))
+            section('Others', othersHeader)
+          else
+            const MasonryChild(key: ValueKey('#top'), span: true, child: SizedBox(height: 8)),
+          for (final n in others) card(n),
+        ],
+      ),
     );
 
     final content = CustomScrollView(
@@ -143,14 +330,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                 constraints: const BoxConstraints(maxWidth: 1600),
                 child: shown.isEmpty
                     ? (firstSync ? const SizedBox.shrink() : _Empty(shelf: _shelf, searching: _query.trim().isNotEmpty))
-                    : Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          if (pinned.isNotEmpty) ...[section('Pinned'), grid(pinned)],
-                          if (pinned.isNotEmpty && others.isNotEmpty) section('Others') else const SizedBox(height: 8),
-                          if (others.isNotEmpty) grid(others),
-                        ],
-                      ),
+                    : grid,
               ),
             ),
           ),
@@ -345,6 +525,75 @@ class _Empty extends StatelessWidget {
             ),
           const SizedBox(height: 24),
           Text(text, style: Theme.of(context).textTheme.titleMedium?.copyWith(color: scheme.onSurfaceVariant)),
+        ],
+      ),
+    );
+  }
+}
+
+bool _same(List<String> a, List<String> b) {
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
+}
+
+/// A card that may be out on a drag: kept in the tree (its state, its
+/// pending checks) but unseen, with its slot drawn in its place.
+class _Placeable extends StatelessWidget {
+  const _Placeable({required this.hidden, required this.child});
+  final bool hidden;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final shape = Theme.of(context).cardTheme.shape;
+    final radius = shape is RoundedRectangleBorder ? shape.borderRadius : BorderRadius.circular(12);
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: AnimatedOpacity(
+            opacity: hidden ? 1 : 0,
+            duration: Durations.short2,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerLow,
+                borderRadius: radius,
+                border: Border.all(color: scheme.outlineVariant),
+              ),
+            ),
+          ),
+        ),
+        Visibility(visible: !hidden, maintainState: true, maintainAnimation: true, maintainSize: true, child: child),
+      ],
+    );
+  }
+}
+
+/// Somewhere to drop a note to pin it, while dragging and nothing is pinned.
+class _PinZone extends StatelessWidget {
+  const _PinZone();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      height: 72,
+      margin: const EdgeInsets.only(bottom: 4),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      alignment: Alignment.center,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        spacing: 8,
+        children: [
+          Icon(Icons.push_pin_outlined, color: scheme.onSurfaceVariant, size: 20),
+          Text('Drop here to pin', style: TextStyle(color: scheme.onSurfaceVariant)),
         ],
       ),
     );
