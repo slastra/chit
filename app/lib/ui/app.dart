@@ -9,6 +9,7 @@ import '../core/protocol.dart';
 import '../data/media.dart';
 import '../data/sync.dart';
 import '../state/providers.dart';
+import 'audio_player.dart';
 import 'feedback.dart';
 import 'phone_notifications.dart';
 import 'share_in.dart';
@@ -24,11 +25,15 @@ import 'viewer.dart';
 /// The desktop theme file, live (null: none, or on the web and phones).
 final themeSpecProvider = StreamProvider<ThemeSpec?>((ref) => watchThemeSpec());
 
+/// The app's navigator, for what lives above it (the mini player).
+final _rootNavigator = GlobalKey<NavigatorState>(debugLabel: 'root');
+
 final _router = Provider<GoRouter>((ref) {
   final refresh = ValueNotifier(0);
   ref.listen(sessionProvider, (_, _) => refresh.value++);
   ref.onDispose(refresh.dispose);
   return GoRouter(
+    navigatorKey: _rootNavigator,
     refreshListenable: refresh,
     redirect: (context, state) {
       final session = ref.read(sessionProvider);
@@ -183,7 +188,11 @@ class _ChitAppState extends ConsumerState<ChitApp> {
     return DynamicColorBuilder(
       builder: (light, dark) => MaterialApp.router(
         title: 'chit',
-        builder: (context, child) => SnackbarHost(child: child ?? const SizedBox.shrink()),
+        // the mini player docks below everything, snackbars included
+        builder: (context, child) => AudioDock(
+          navigatorKey: _rootNavigator,
+          child: SnackbarHost(child: child ?? const SizedBox.shrink()),
+        ),
         debugShowCheckedModeBanner: false,
         // Where the colors come from, first match wins: the desktop's theme
         // file (it decides light or dark itself); Android's own scheme, as

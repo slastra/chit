@@ -16,6 +16,7 @@ import '../core/protocol.dart';
 import '../data/local_files.dart' as files;
 import '../data/media.dart';
 import '../state/providers.dart';
+import 'audio_player.dart';
 import 'create.dart' show newNoteDefaults;
 import 'feedback.dart';
 import 'home_page.dart' show isExpanded;
@@ -158,7 +159,9 @@ IconData kindIcon(Attachment a) => switch (a.kind) {
   MediaKind.other => Icons.insert_drive_file_outlined,
 };
 
-void openAttachment(BuildContext context, Attachment a) => context.push('/note/${a.note}/file/${a.id}');
+void openAttachment(BuildContext context, Attachment a) => a.kind == MediaKind.audio
+    ? unawaited(showAudioPlayer(context, a))
+    : unawaited(context.push('/note/${a.note}/file/${a.id}'));
 
 /// A note's images, as Keep shows them: one at its own shape, several as a
 /// grid of squares. Each opens the viewer.
@@ -346,6 +349,12 @@ final class MediaDeck {
     } finally {
       loading.value = null;
     }
+  }
+
+  /// Stops and unloads whatever is playing (the mini player's close).
+  Future<void> stop() async {
+    current.value = null;
+    await player.stop();
   }
 
   void dispose() {

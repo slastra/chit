@@ -119,14 +119,13 @@ class _ViewerPageState extends ConsumerState<ViewerPage> {
           autofocus: true,
           child: Scaffold(
             backgroundColor: Colors.black,
-            extendBodyBehindAppBar: true,
             appBar: _ViewerBar(
               attachment: a,
               onClose: () => context.pop(),
               onSave: a.pending ? null : () => _save(a),
               onRemove: () => _delete(a),
             ),
-            body: SafeArea(top: a.kind != MediaKind.image, child: body),
+            body: SafeArea(top: false, child: body),
           ),
         ),
       ),
@@ -134,9 +133,10 @@ class _ViewerPageState extends ConsumerState<ViewerPage> {
   }
 }
 
-/// The viewer's top app bar, to Material 3's small top app bar spec (64dp;
-/// a one-line title in title large, a subtitle in label medium, both from
-/// the theme), on a scrim so it reads over any picture.
+/// The viewer's top app bar: Material 3's small app bar with a subtitle
+/// (m3.material.io app bars specs): 64dp on surface, 4dp from the edge to
+/// the 48dp buttons and from the button to the headline, the headline in
+/// title large on surface, the subtitle in label medium on surface variant.
 class _ViewerBar extends StatelessWidget implements PreferredSizeWidget {
   const _ViewerBar({required this.attachment, required this.onClose, required this.onSave, required this.onRemove});
   final Attachment attachment;
@@ -152,7 +152,7 @@ class _ViewerBar extends StatelessWidget implements PreferredSizeWidget {
     final theme = Theme.of(context);
     final a = attachment;
     return ColoredBox(
-      color: Colors.black.withValues(alpha: 0.5),
+      color: theme.colorScheme.surface,
       child: SafeArea(
         bottom: false,
         child: SizedBox(
@@ -161,7 +161,7 @@ class _ViewerBar extends StatelessWidget implements PreferredSizeWidget {
             children: [
               const SizedBox(width: 4),
               IconButton(tooltip: 'Close', icon: const Icon(Icons.close), onPressed: onClose),
-              const SizedBox(width: 12),
+              const SizedBox(width: 4),
               Expanded(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
