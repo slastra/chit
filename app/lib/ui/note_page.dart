@@ -16,6 +16,7 @@ import '../state/providers.dart';
 import 'note_colors.dart';
 import 'app.dart' show themeSpecProvider;
 import 'attachments.dart';
+import 'check_motion.dart';
 import 'feedback.dart';
 import 'home_page.dart' show isExpanded;
 import 'theme.dart';
@@ -75,6 +76,9 @@ class _NotePageState extends ConsumerState<NotePage> {
   Library? _library;
 
   bool _dropping = false;
+  late final _checkOff = CheckOff(() {
+    if (mounted) setState(() {});
+  });
 
   @override
   void initState() {
@@ -100,6 +104,7 @@ class _NotePageState extends ConsumerState<NotePage> {
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_onKey);
+    _checkOff.flush();
     for (final t in _timers.values) {
       t.cancel();
     }
@@ -361,15 +366,29 @@ class _NotePageState extends ConsumerState<NotePage> {
         : appTheme;
     final text = theme.textTheme;
 
-    Widget itemRow(Item it) => _ItemRow(
-      key: ValueKey(it.id),
-      item: it,
-      controller: _itemCtl(it),
-      focusNode: _itemNode(it.id),
-      onCheck: (v) => _edit(() => [_op(Collections.items, it.id, 'checked', v)]),
-      onChanged: (v) => _later('item:${it.id}', () => _edit(() => [_op(Collections.items, it.id, 'text', v)])),
-      onSubmitted: () => _addItem(items, after: it),
-      onRemove: () => _edit(() => [_op(Collections.items, it.id, 'deleted', true)]),
+    // A row folds out of its list and into the other when checked or
+    // unchecked here (check_motion.dart); a change from elsewhere just moves.
+    Widget itemRow(Item it) => Fold(
+      key: ValueKey('${it.id}/${it.checked}'),
+      leaving: _checkOff.isLeaving(it.id),
+      enter: _checkOff.takeArrival(it.id, it.checked),
+      onGone: () => _checkOff.gone(it.id),
+      child: _ItemRow(
+        key: ValueKey(it.id),
+        item: it,
+        checked: _checkOff.showsChecked(it.id) ? !it.checked : it.checked,
+        controller: _itemCtl(it),
+        focusNode: _itemNode(it.id),
+        onCheck: (v) => _checkOff.start(
+          it.id,
+          target: v,
+          still: MediaQuery.disableAnimationsOf(context),
+          commit: () => _edit(() => [_op(Collections.items, it.id, 'checked', v)]),
+        ),
+        onChanged: (v) => _later('item:${it.id}', () => _edit(() => [_op(Collections.items, it.id, 'text', v)])),
+        onSubmitted: () => _addItem(items, after: it),
+        onRemove: () => _edit(() => [_op(Collections.items, it.id, 'deleted', true)]),
+      ),
     );
 
     void archive() {
@@ -595,6 +614,7 @@ class _ItemRow extends StatefulWidget {
   const _ItemRow({
     super.key,
     required this.item,
+    required this.checked,
     required this.controller,
     required this.focusNode,
     required this.onCheck,
@@ -604,6 +624,10 @@ class _ItemRow extends StatefulWidget {
   });
 
   final Item item;
+
+  /// What the row shows: the item's state, or where it is headed while it
+  /// plays its check-off.
+  final bool checked;
   final TextEditingController controller;
   final FocusNode focusNode;
   final ValueChanged<bool> onCheck;
@@ -644,14 +668,14 @@ class _ItemRowState extends State<_ItemRow> {
         padding: EdgeInsets.only(left: 4.0 + it.indent * 28),
         child: Row(
           children: [
-            Checkbox(value: it.checked, onChanged: (v) => widget.onCheck(v ?? false)),
+            Checkbox(value: widget.checked, onChanged: (v) => widget.onCheck(v ?? false)),
             Expanded(
               child: TextField(
                 controller: widget.controller,
                 focusNode: widget.focusNode,
                 style: theme.textTheme.bodyLarge?.copyWith(
-                  decoration: it.checked ? TextDecoration.lineThrough : null,
-                  color: it.checked ? theme.colorScheme.onSurfaceVariant : null,
+                  decoration: widget.checked ? TextDecoration.lineThrough : null,
+                  color: widget.checked ? theme.colorScheme.onSurfaceVariant : null,
                 ),
                 decoration: const InputDecoration(hintText: 'List item', isDense: true, border: InputBorder.none),
                 textInputAction: TextInputAction.next,

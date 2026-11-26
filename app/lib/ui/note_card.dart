@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -7,6 +10,7 @@ import '../core/protocol.dart';
 import '../data/replica.dart';
 import '../state/providers.dart';
 import 'attachments.dart';
+import 'check_motion.dart';
 import 'note_colors.dart';
 
 /// A note on the grid: title, the start of the body or the open items, and
@@ -93,7 +97,7 @@ class NoteCard extends ConsumerWidget {
                     ),
                   if (note.isList)
                     for (final it in open.take(_itemsShown))
-                      _ItemLine(item: it, ink: ink, onCheck: () => _check(ref, it)),
+                      _ItemLine(key: ValueKey(it.id), item: it, ink: ink, onCheck: () => _check(ref, it)),
                 ],
               ),
             ),
@@ -177,40 +181,102 @@ class NoteCard extends ConsumerWidget {
   }
 }
 
-class _ItemLine extends StatelessWidget {
-  const _ItemLine({required this.item, required this.ink, required this.onCheck});
+/// An open item on the card. Checked here, its box fills and its text is
+/// struck at once; after a beat it folds away, and only then is the edit
+/// sent (check_motion.dart).
+class _ItemLine extends StatefulWidget {
+  const _ItemLine({super.key, required this.item, required this.ink, required this.onCheck});
   final Item item;
   final Color ink;
   final VoidCallback onCheck;
 
   @override
-  Widget build(BuildContext context) => Row(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      // its own tap target (taller than the glyph, so it is easy to hit),
-      // so checking does not open the note
-      Semantics(
-        button: true,
-        label: 'Check ${item.text}',
-        child: InkResponse(
-          onTap: onCheck,
-          radius: 18,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(2, 2, 10, 2),
-            child: Icon(Icons.check_box_outline_blank, size: 18, color: ink),
+  State<_ItemLine> createState() => _ItemLineState();
+}
+
+class _ItemLineState extends State<_ItemLine> {
+  bool _checked = false;
+  bool _leaving = false;
+  bool _sent = false;
+  Timer? _beat;
+
+  void _send() {
+    if (_sent) return;
+    _sent = true;
+    widget.onCheck();
+  }
+
+  void _check() {
+    if (_checked) return;
+    unawaited(HapticFeedback.selectionClick());
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _send();
+      return;
+    }
+    setState(() => _checked = true);
+    _beat = Timer(checkBeat, () {
+      if (mounted) setState(() => _leaving = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    // the card went away mid-check (scrolled off, the board changed): the
+    // check still counts
+    _beat?.cancel();
+    if (_checked) _send();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ink = widget.ink;
+    final style = Theme.of(context).textTheme.bodyMedium?.copyWith(
+      color: _checked ? ink.withValues(alpha: 0.6) : ink,
+      decoration: _checked ? TextDecoration.lineThrough : null,
+      decorationColor: ink.withValues(alpha: 0.6),
+    );
+    return Fold(
+      leaving: _leaving,
+      onGone: _send,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // its own tap target (taller than the glyph, so it is easy to hit),
+          // so checking does not open the note
+          Semantics(
+            button: true,
+            checked: _checked,
+            label: 'Check ${widget.item.text}',
+            child: InkResponse(
+              onTap: _check,
+              radius: 18,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(2, 2, 10, 2),
+                child: AnimatedSwitcher(
+                  duration: Durations.short3,
+                  transitionBuilder: (child, a) => ScaleTransition(scale: a, child: child),
+                  child: Icon(
+                    _checked ? Icons.check_box : Icons.check_box_outline_blank,
+                    key: ValueKey(_checked),
+                    size: 18,
+                    color: ink,
+                  ),
+                ),
+              ),
+            ),
           ),
-        ),
+          Expanded(
+            child: AnimatedDefaultTextStyle(
+              duration: Durations.short3,
+              style: style ?? const TextStyle(),
+              child: Text(widget.item.text, maxLines: 2, overflow: TextOverflow.ellipsis),
+            ),
+          ),
+        ],
       ),
-      Expanded(
-        child: Text(
-          item.text,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: ink),
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ),
-      ),
-    ],
-  );
+    );
+  }
 }
 
 class _Mark extends StatelessWidget {
