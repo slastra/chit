@@ -2343,7 +2343,7 @@ class NativePlayer extends PlatformPlayer {
         // 0.42's own PipeWire output, playing audio with no video, gets the
         // whole process SIGKILLed a few seconds in on PipeWire 1.6 (its
         // realtime thread overruns the RT time limit).
-        'ao': 'pulse,pipewire,alsa',
+        if (Platform.isLinux) 'ao': 'pulse,pipewire,alsa',
       };
 
       if (Platform.isAndroid &&

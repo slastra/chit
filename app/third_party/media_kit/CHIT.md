@@ -11,7 +11,7 @@ libflutter_linux_gtk's own, and the process segfaults in
 `_Unwind_RaiseException` (seen playing an audio file). media_kit has no hook
 for options set before `mpv_initialize`, hence the copy.
 
-A second change, in the same options: `ao=pulse,pipewire,alsa`. mpv 0.42's
+A second change, in the same options, on Linux only: `ao=pulse,pipewire,alsa`. mpv 0.42's
 PipeWire output, playing audio with no video, gets the process SIGKILLed a
 few seconds in on PipeWire 1.6.11 (its realtime audio thread overruns the RT
 time limit); the same happens with the mpv command line (`mpv --vid=no
