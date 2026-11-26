@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/physics.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -8,9 +9,10 @@ import 'package:material_ui/material_ui.dart';
 const checkBeat = Duration(milliseconds: 350);
 
 /// A list row that folds open when it arrives ([enter]) and folds shut when
-/// [leaving] turns true, then calls [onGone]. Material's emphasized easing:
-/// decelerating in (medium, 300ms), accelerating out (short, 200ms). With
-/// reduced motion it simply appears and goes.
+/// [leaving] turns true, then calls [onGone]. Material 3 Expressive motion:
+/// the height moves on the standard spatial spring and the fade on the
+/// standard effects spring (springs, not durations). With reduced motion it
+/// simply appears and goes.
 class Fold extends StatefulWidget {
   const Fold({super.key, required this.child, this.leaving = false, this.enter = false, this.onGone});
 
@@ -23,28 +25,28 @@ class Fold extends StatefulWidget {
   State<Fold> createState() => _FoldState();
 }
 
-class _FoldState extends State<Fold> with SingleTickerProviderStateMixin {
-  late final _c = AnimationController(
-    vsync: this,
-    duration: Durations.medium2,
-    reverseDuration: Durations.short4,
-    value: widget.enter ? 0 : 1,
-  );
-  late final _size = CurvedAnimation(
-    parent: _c,
-    curve: Easing.emphasizedDecelerate,
-    reverseCurve: Easing.emphasizedAccelerate,
-  );
+class _FoldState extends State<Fold> with TickerProviderStateMixin {
+  late final _size = AnimationController.unbounded(vsync: this, value: widget.enter ? 0 : 1);
+  late final _fade = AnimationController.unbounded(vsync: this, value: widget.enter ? 0 : 1);
 
   bool get _still => MediaQuery.disableAnimationsOf(context);
+
+  Future<void> _to(double target) {
+    if (_still) {
+      _size.value = target;
+      _fade.value = target;
+      return Future.value();
+    }
+    unawaited(_fade.animateWith(SpringSimulation(Springs.standardDefaultEffects, _fade.value, target, 0)));
+    return _size.animateWith(SpringSimulation(Springs.standardDefaultSpatial, _size.value, target, _size.velocity));
+  }
 
   @override
   void initState() {
     super.initState();
     if (widget.enter) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _still ? _c.value = 1 : unawaited(_c.forward());
+        if (mounted) unawaited(_to(1));
       });
     }
   }
@@ -53,27 +55,28 @@ class _FoldState extends State<Fold> with SingleTickerProviderStateMixin {
   void didUpdateWidget(Fold old) {
     super.didUpdateWidget(old);
     if (widget.leaving && !old.leaving) {
-      if (_still) {
-        _c.value = 0;
-        widget.onGone?.call();
-      } else {
-        unawaited(_c.reverse().then((_) => widget.onGone?.call()));
-      }
+      unawaited(_to(0).then((_) => widget.onGone?.call()));
     }
   }
 
   @override
   void dispose() {
     _size.dispose();
-    _c.dispose();
+    _fade.dispose();
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) => SizeTransition(
-    sizeFactor: _size,
-    alignment: Alignment.topCenter,
-    child: FadeTransition(opacity: _c, child: widget.child),
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: Listenable.merge([_size, _fade]),
+    builder: (context, child) => ClipRect(
+      child: Align(
+        alignment: Alignment.topCenter,
+        heightFactor: _size.value.clamp(0.0, 1.0),
+        child: Opacity(opacity: _fade.value.clamp(0.0, 1.0), child: child),
+      ),
+    ),
+    child: widget.child,
   );
 }
 

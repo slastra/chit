@@ -78,6 +78,9 @@ ThemeData themeFor(ColorScheme scheme, [ThemeSpec? spec]) {
     // (the flag is deprecated only because false becomes the default)
     // ignore: deprecated_member_use
     progressIndicatorTheme: const ProgressIndicatorThemeData(year2023: false),
+    // the 2024 slider too: a thick track with a gap and a bar handle
+    // ignore: deprecated_member_use
+    sliderTheme: const SliderThemeData(year2023: false),
   );
 }
 

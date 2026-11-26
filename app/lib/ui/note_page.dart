@@ -506,7 +506,12 @@ class _NotePageState extends ConsumerState<NotePage> {
                             Padding(
                               padding: const EdgeInsets.only(bottom: 8),
                               child: ClipRRect(
-                                borderRadius: BorderRadius.circular(12),
+                                // the card's corner, from the theme's shape scale
+                                borderRadius:
+                                    (theme.cardTheme.shape as RoundedRectangleBorder?)?.borderRadius.resolve(
+                                      Directionality.of(context),
+                                    ) ??
+                                    BorderRadius.circular(12),
                                 child: NoteImages(images: images),
                               ),
                             ),

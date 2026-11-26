@@ -722,12 +722,9 @@ class _MemoRecorderState extends State<_MemoRecorder> {
                   onPressed: _saving ? null : () => _finish(keep: false),
                   child: Text(_error == null ? 'Cancel' : 'Close'),
                 ),
+                // a dialog's actions are text buttons (Material's dialog spec)
                 if (_error == null)
-                  FilledButton.icon(
-                    onPressed: _saving ? null : () => _finish(keep: true),
-                    icon: const Icon(Icons.stop_rounded),
-                    label: const Text('Stop and save'),
-                  ),
+                  TextButton(onPressed: _saving ? null : () => _finish(keep: true), child: const Text('Save')),
               ],
             ),
           ],
