@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../data/sync.dart';
 import '../state/providers.dart';
+import 'feedback.dart';
 import 'home_page.dart';
 import 'login_page.dart';
 import 'note_page.dart';
@@ -34,15 +35,56 @@ final _router = Provider<GoRouter>((ref) {
       GoRoute(path: '/login', builder: (_, _) => const LoginPage()),
       GoRoute(
         path: '/note/new',
-        builder: (_, state) => NotePage(list: state.uri.queryParameters['list'] == '1'),
+        pageBuilder: (context, state) => _notePage(
+          context,
+          state,
+          (dialog) => NotePage(list: state.uri.queryParameters['list'] == '1', inDialog: dialog),
+        ),
       ),
       GoRoute(
         path: '/note/:id',
-        builder: (_, state) => NotePage(noteId: state.pathParameters['id']),
+        pageBuilder: (context, state) =>
+            _notePage(context, state, (dialog) => NotePage(noteId: state.pathParameters['id'], inDialog: dialog)),
       ),
     ],
   );
 });
+
+/// A note opens full-screen on compact and medium windows, and as a dialog
+/// over the board on expanded ones: Material's adaptive pattern for a detail
+/// view, which keeps the notes in view behind it.
+Page<void> _notePage(BuildContext context, GoRouterState state, Widget Function(bool dialog) page) =>
+    isExpanded(context)
+    ? _DialogPage(key: state.pageKey, child: page(true))
+    : MaterialPage(key: state.pageKey, child: page(false));
+
+class _DialogPage extends Page<void> {
+  const _DialogPage({super.key, required this.child});
+  final Widget child;
+
+  @override
+  Route<void> createRoute(BuildContext context) => DialogRoute<void>(
+    context: context,
+    settings: this,
+    builder: (context) {
+      final size = MediaQuery.sizeOf(context);
+      final theme = Theme.of(context);
+      final radius = theme.dialogTheme.shape is RoundedRectangleBorder
+          ? (theme.dialogTheme.shape! as RoundedRectangleBorder).borderRadius
+          : const BorderRadius.all(Radius.circular(28));
+      return Dialog(
+        clipBehavior: Clip.antiAlias,
+        // a hairline edge, so the dialog holds its shape on a black board
+        shape: RoundedRectangleBorder(
+          borderRadius: radius,
+          side: BorderSide(color: theme.colorScheme.outlineVariant),
+        ),
+        insetPadding: const EdgeInsets.all(32),
+        child: SizedBox(width: 720, height: (size.height - 96).clamp(320, 820), child: child),
+      );
+    },
+  );
+}
 
 class ChitApp extends ConsumerWidget {
   const ChitApp({super.key});
@@ -57,6 +99,7 @@ class ChitApp extends ConsumerWidget {
     return DynamicColorBuilder(
       builder: (light, dark) => MaterialApp.router(
         title: 'chit',
+        scaffoldMessengerKey: messengerKey,
         debugShowCheckedModeBanner: false,
         // a theme file decides light or dark itself
         theme: spec != null ? buildTheme(null, spec.brightness, spec) : buildTheme(light, Brightness.light),

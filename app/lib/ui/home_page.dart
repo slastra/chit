@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
@@ -19,6 +21,10 @@ enum Shelf {
   final IconData icon;
   final IconData selectedIcon;
 }
+
+/// Material's expanded window size class starts at 840dp: from there the
+/// navigation drawer docks beside the content and holds the FAB.
+bool isExpanded(BuildContext context) => MediaQuery.sizeOf(context).width >= 840;
 
 class HomePage extends ConsumerStatefulWidget {
   const HomePage({super.key});
@@ -51,14 +57,25 @@ class _HomePageState extends ConsumerState<HomePage> {
     return lib.notes.where((n) => onShelf(n) && hit(n)).toList()..sort((a, b) => b.updated.compareTo(a.updated));
   }
 
+  void _pick(Shelf s) => setState(() => _shelf = s);
+
+  Future<void> _refresh() async {
+    ref.read(engineProvider)?.nudge();
+    // give the reconnect a moment; the grid updates on its own as changes land
+    await Future<void>.delayed(const Duration(milliseconds: 600));
+  }
+
   @override
   Widget build(BuildContext context) {
     final lib = ref.watch(libraryProvider).value ?? Library.empty;
+    final status = ref.watch(syncStatusProvider).value;
     final shown = _shown(lib);
     final pinned = _shelf == Shelf.notes ? shown.where((n) => lib.stateOf(n.id).pinned).toList() : <Note>[];
     final others = shown.where((n) => !pinned.contains(n)).toList();
-    // Material's expanded size class: the drawer docks beside the notes
-    final wide = MediaQuery.sizeOf(context).width >= 840;
+    final wide = isExpanded(context);
+    final theme = Theme.of(context);
+    final firstSync = lib.notes.isEmpty && status?.phase != SyncPhase.online && status?.phase != SyncPhase.offline;
+    final margin = wide ? 24.0 : 16.0;
 
     Widget grid(List<Note> notes) => Masonry(
       minColumnWidth: wide ? 240 : 160,
@@ -66,107 +83,115 @@ class _HomePageState extends ConsumerState<HomePage> {
       children: [for (final n in notes) NoteCard(key: ValueKey(n.id), note: n, library: lib)],
     );
 
-    final theme = Theme.of(context);
+    // Material 3 section headers: title-small, sentence case
     Widget section(String label) => Padding(
-      padding: const EdgeInsets.fromLTRB(4, 20, 4, 8),
-      child: Text(
-        label.toUpperCase(),
-        style: theme.textTheme.labelMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant, letterSpacing: 1.2),
-      ),
+      padding: const EdgeInsets.fromLTRB(4, 16, 4, 8),
+      child: Text(label, style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+    );
+
+    final content = CustomScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      slivers: [
+        SliverAppBar(
+          floating: true,
+          snap: true,
+          toolbarHeight: 72,
+          titleSpacing: margin,
+          automaticallyImplyLeading: false,
+          centerTitle: true,
+          title: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: SearchBar(
+              hintText: _shelf == Shelf.notes ? 'Search your notes' : 'Search ${_shelf.label.toLowerCase()}',
+              elevation: const WidgetStatePropertyAll(0),
+              backgroundColor: WidgetStatePropertyAll(theme.colorScheme.surfaceContainerHigh),
+              leading: wide
+                  ? Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Icon(Icons.search, color: theme.colorScheme.onSurfaceVariant),
+                    )
+                  : IconButton(
+                      icon: const Icon(Icons.menu),
+                      tooltip: 'Open navigation',
+                      onPressed: () => _scaffold.currentState?.openDrawer(),
+                    ),
+              trailing: const [_SyncMark(), _Account()],
+              onChanged: (v) => setState(() => _query = v),
+            ),
+          ),
+          bottom: firstSync
+              ? const PreferredSize(preferredSize: Size.fromHeight(4), child: LinearProgressIndicator())
+              : null,
+        ),
+        SliverPadding(
+          padding: EdgeInsets.fromLTRB(margin, 0, margin, 120),
+          // centered and capped, so a very wide screen keeps the grid together
+          sliver: SliverToBoxAdapter(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1600),
+                child: shown.isEmpty
+                    ? (firstSync ? const SizedBox.shrink() : _Empty(shelf: _shelf, searching: _query.trim().isNotEmpty))
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (pinned.isNotEmpty) ...[section('Pinned'), grid(pinned)],
+                          if (pinned.isNotEmpty && others.isNotEmpty) section('Others') else const SizedBox(height: 8),
+                          if (others.isNotEmpty) grid(others),
+                        ],
+                      ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
 
     return Scaffold(
       key: _scaffold,
-      drawer: wide ? null : _Drawer(shelf: _shelf, onPick: (s) => setState(() => _shelf = s)),
+      drawer: wide ? null : _Drawer(shelf: _shelf, onPick: _pick),
       body: SafeArea(
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (wide) _Drawer(shelf: _shelf, docked: true, onPick: (s) => setState(() => _shelf = s)),
+            if (wide) _Drawer(shelf: _shelf, docked: true, onPick: _pick),
             Expanded(
-              child: CustomScrollView(
-                slivers: [
-                  SliverAppBar(
-                    floating: true,
-                    toolbarHeight: 72,
-                    titleSpacing: 12,
-                    automaticallyImplyLeading: false,
-                    centerTitle: true,
-                    title: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 720),
-                      child: SearchBar(
-                        hintText: _shelf == Shelf.notes ? 'Search notes' : 'Search ${_shelf.label.toLowerCase()}',
-                        elevation: const WidgetStatePropertyAll(0),
-                        leading: wide
-                            ? const Padding(padding: EdgeInsets.all(8), child: Icon(Icons.search))
-                            : IconButton(
-                                icon: const Icon(Icons.menu),
-                                tooltip: 'Menu',
-                                onPressed: () => _scaffold.currentState?.openDrawer(),
-                              ),
-                        trailing: const [_SyncMark()],
-                        onChanged: (v) => setState(() => _query = v),
-                      ),
-                    ),
-                  ),
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 96),
-                    // centered and capped, so a very wide screen does not stretch
-                    // the grid edge to edge
-                    sliver: SliverToBoxAdapter(
-                      child: Center(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 1600),
-                          child: shown.isEmpty
-                              ? _Empty(shelf: _shelf, searching: _query.trim().isNotEmpty)
-                              : Column(
-                                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                                  children: [
-                                    if (pinned.isNotEmpty) ...[section('Pinned'), grid(pinned)],
-                                    if (pinned.isNotEmpty && others.isNotEmpty)
-                                      section('Others')
-                                    else
-                                      const SizedBox(height: 8),
-                                    if (others.isNotEmpty) grid(others),
-                                  ],
-                                ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+              child: RefreshIndicator(onRefresh: _refresh, child: content),
             ),
           ],
         ),
       ),
-      floatingActionButton: _shelf == Shelf.notes
-          ? Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                FloatingActionButton.small(
-                  heroTag: 'list',
-                  tooltip: 'New list',
-                  onPressed: () => context.push('/note/new?list=1'),
-                  child: const Icon(Icons.checklist),
-                ),
-                const SizedBox(height: 12),
-                FloatingActionButton.extended(
-                  heroTag: 'note',
-                  onPressed: () => context.push('/note/new'),
-                  icon: const Icon(Icons.edit_outlined),
-                  label: const Text('Note'),
-                ),
-              ],
+      // Compact and medium: one FAB, set into a bottom app bar that carries
+      // the secondary action. Expanded: the drawer holds both.
+      floatingActionButton: !wide && _shelf == Shelf.notes
+          ? FloatingActionButton(
+              tooltip: 'New note',
+              onPressed: () => context.push('/note/new'),
+              elevation: 0,
+              child: const Icon(Icons.edit_outlined),
+            )
+          : null,
+      floatingActionButtonLocation: FloatingActionButtonLocation.endContained,
+      bottomNavigationBar: !wide && _shelf == Shelf.notes
+          ? BottomAppBar(
+              child: Row(
+                children: [
+                  IconButton(
+                    tooltip: 'New list',
+                    icon: const Icon(Icons.check_box_outlined),
+                    onPressed: () => context.push('/note/new?list=1'),
+                  ),
+                ],
+              ),
             )
           : null,
     );
   }
 }
 
-/// The shelves and the account. Docked beside the notes on a wide screen
-/// (a standard drawer), slid out from the menu button otherwise.
+/// The shelves. Docked beside the notes on an expanded screen, where it also
+/// carries the FAB (Material's placement for expanded layouts); slid out from
+/// the menu button otherwise.
 class _Drawer extends ConsumerWidget {
   const _Drawer({required this.shelf, required this.onPick, this.docked = false});
   final Shelf shelf;
@@ -175,33 +200,87 @@ class _Drawer extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final session = ref.watch(sessionProvider).value;
+    final theme = Theme.of(context);
     return NavigationDrawer(
       selectedIndex: shelf.index,
+      backgroundColor: docked ? theme.colorScheme.surface : null,
       onDestinationSelected: (i) {
         onPick(Shelf.values[i]);
         if (!docked) Navigator.of(context).pop();
       },
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(28, 16, 16, 12),
-          child: Text('chit', style: Theme.of(context).textTheme.titleLarge),
+          padding: const EdgeInsets.fromLTRB(28, 20, 16, 16),
+          child: Text('chit', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600)),
         ),
+        if (docked)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Row(
+              spacing: 8,
+              children: [
+                FloatingActionButton.extended(
+                  heroTag: 'new-note',
+                  elevation: 0,
+                  onPressed: () => context.push('/note/new'),
+                  icon: const Icon(Icons.edit_outlined),
+                  label: const Text('New note'),
+                ),
+                IconButton.filledTonal(
+                  tooltip: 'New list',
+                  icon: const Icon(Icons.check_box_outlined),
+                  onPressed: () => context.push('/note/new?list=1'),
+                ),
+              ],
+            ),
+          ),
         for (final s in Shelf.values)
           NavigationDrawerDestination(icon: Icon(s.icon), selectedIcon: Icon(s.selectedIcon), label: Text(s.label)),
-        const Padding(padding: EdgeInsets.symmetric(horizontal: 28, vertical: 12), child: Divider()),
-        if (session != null)
-          ListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 28),
-            leading: const Icon(Icons.account_circle_outlined),
-            title: Text(session.user.display),
-            subtitle: Text(Uri.parse(session.server).host),
+      ],
+    );
+  }
+}
+
+/// The account: an avatar in the search bar, with the account and sign-out
+/// in its menu.
+class _Account extends ConsumerWidget {
+  const _Account();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final session = ref.watch(sessionProvider).value;
+    if (session == null) return const SizedBox.shrink();
+    final scheme = Theme.of(context).colorScheme;
+    final name = session.user.display;
+    return MenuAnchor(
+      alignmentOffset: const Offset(-160, 8),
+      builder: (context, ctl, _) => IconButton(
+        tooltip: 'Account: $name',
+        onPressed: () => ctl.isOpen ? ctl.close() : ctl.open(),
+        icon: CircleAvatar(
+          radius: 15,
+          backgroundColor: scheme.primaryContainer,
+          foregroundColor: scheme.onPrimaryContainer,
+          child: Text(name.isEmpty ? '?' : name.characters.first.toUpperCase()),
+        ),
+      ),
+      menuChildren: [
+        MenuItemButton(
+          leadingIcon: const Icon(Icons.account_circle_outlined),
+          onPressed: null,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(name),
+              Text(Uri.parse(session.server).host, style: Theme.of(context).textTheme.bodySmall),
+            ],
           ),
-        ListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 28),
-          leading: const Icon(Icons.logout),
-          title: const Text('Sign out'),
-          onTap: () => ref.read(sessionProvider.notifier).signOut(),
+        ),
+        const Divider(height: 1),
+        MenuItemButton(
+          leadingIcon: const Icon(Icons.logout),
+          onPressed: () => ref.read(sessionProvider.notifier).signOut(),
+          child: const Text('Sign out'),
         ),
       ],
     );
@@ -245,11 +324,11 @@ class _Empty extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final text = searching
-        ? 'No notes match.'
+        ? 'No notes match'
         : switch (shelf) {
             Shelf.notes => 'Notes you add appear here',
             Shelf.archive => 'Archived notes appear here',
-            Shelf.trash => 'The trash is empty',
+            Shelf.trash => 'No notes in the trash',
           };
     return Padding(
       padding: const EdgeInsets.only(top: 96),

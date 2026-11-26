@@ -11,6 +11,8 @@ import '../data/sync.dart';
 import '../state/providers.dart';
 import 'note_colors.dart';
 import 'app.dart' show themeSpecProvider;
+import 'feedback.dart';
+import 'home_page.dart' show isExpanded;
 import 'theme.dart';
 
 /// One note, open or new. Edits save as you pause (and work offline). A new
@@ -18,9 +20,13 @@ import 'theme.dart';
 /// as Keep does. The page wears the note's color: its whole scheme comes
 /// from that hue.
 class NotePage extends ConsumerStatefulWidget {
-  const NotePage({super.key, this.noteId, this.list = false});
+  const NotePage({super.key, this.noteId, this.list = false, this.inDialog = false});
 
   final String? noteId;
+
+  /// Shown as a dialog over the board (expanded windows): an elevated
+  /// surface, and a close button instead of back.
+  final bool inDialog;
 
   /// For a new note: start as a checklist.
   final bool list;
@@ -123,6 +129,14 @@ class _NotePageState extends ConsumerState<NotePage> {
         items.every((i) => i.text.trim().isEmpty) &&
         (lib?.attachments[_id]?.isEmpty ?? true);
     if (empty && widget.noteId == null) _edit(() => [_op(Collections.notes, _id, 'deleted', true)]);
+  }
+
+  /// An Undo for a snackbar. It runs after this page has closed, so it holds
+  /// the engine itself rather than this page's (by then disposed) ref.
+  VoidCallback _undo(String collection, String field, Object? value) {
+    final engine = _engine;
+    final id = _id;
+    return () => engine?.edit([engine.op(collection, id, field, value)]);
   }
 
   void _setNote(String field, Object? value) => _edit(() => [_op(Collections.notes, _id, field, value)]);
@@ -236,7 +250,13 @@ class _NotePageState extends ConsumerState<NotePage> {
       WidgetsBinding.instance.addPostFrameCallback((_) => _itemNode(id).requestFocus());
     }
 
-    final base = Theme.of(context);
+    final appTheme = Theme.of(context);
+    // in a dialog, an uncolored note sits on Material's dialog surface
+    final base = widget.inDialog
+        ? appTheme.copyWith(
+            colorScheme: appTheme.colorScheme.copyWith(surface: appTheme.colorScheme.surfaceContainerHigh),
+          )
+        : appTheme;
     final scheme = noteScheme(note?.color ?? '', base.brightness);
     final theme = scheme == null
         ? base
@@ -246,37 +266,57 @@ class _NotePageState extends ConsumerState<NotePage> {
           );
     final text = theme.textTheme;
 
-    Widget itemRow(Item it) => Padding(
+    Widget itemRow(Item it) => _ItemRow(
       key: ValueKey(it.id),
-      padding: EdgeInsets.only(left: 8.0 + it.indent * 28),
-      child: Row(
-        children: [
-          Checkbox(
-            value: it.checked,
-            onChanged: (v) => _edit(() => [_op(Collections.items, it.id, 'checked', v ?? false)]),
-          ),
-          Expanded(
-            child: TextField(
-              controller: _itemCtl(it),
-              focusNode: _itemNode(it.id),
-              style: text.bodyLarge?.copyWith(
-                decoration: it.checked ? TextDecoration.lineThrough : null,
-                color: it.checked ? theme.colorScheme.onSurfaceVariant : null,
-              ),
-              decoration: const InputDecoration(hintText: 'List item', isDense: true),
-              textInputAction: TextInputAction.next,
-              onChanged: (v) => _later('item:${it.id}', () => _edit(() => [_op(Collections.items, it.id, 'text', v)])),
-              onSubmitted: (_) => _addItem(items, after: it),
-            ),
-          ),
-          IconButton(
-            tooltip: 'Remove',
-            icon: const Icon(Icons.close),
-            onPressed: () => _edit(() => [_op(Collections.items, it.id, 'deleted', true)]),
-          ),
-        ],
-      ),
+      item: it,
+      controller: _itemCtl(it),
+      focusNode: _itemNode(it.id),
+      onCheck: (v) => _edit(() => [_op(Collections.items, it.id, 'checked', v)]),
+      onChanged: (v) => _later('item:${it.id}', () => _edit(() => [_op(Collections.items, it.id, 'text', v)])),
+      onSubmitted: () => _addItem(items, after: it),
+      onRemove: () => _edit(() => [_op(Collections.items, it.id, 'deleted', true)]),
     );
+
+    void archive() {
+      final was = state.archived;
+      _setState('archived', !was);
+      if (!was) {
+        context.pop();
+        showUndo('Note archived', _undo(Collections.noteState, 'archived', false));
+      }
+    }
+
+    void trash() {
+      if (trashed) {
+        _setNote('trashed', '');
+        return;
+      }
+      _setNote('trashed', DateTime.now().toUtc().toIso8601String());
+      context.pop();
+      showUndo('Note moved to trash', _undo(Collections.notes, 'trashed', ''));
+    }
+
+    // Deleting forever cannot be undone, so it asks first (Material's rule
+    // for irreversible actions); everything else acts at once with Undo.
+    Future<void> deleteForever() async {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          icon: const Icon(Icons.delete_forever_outlined),
+          title: const Text('Delete this note forever?'),
+          content: const Text('It goes from every device, for everyone it is shared with.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+            TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
+          ],
+        ),
+      );
+      if (ok ?? false) {
+        _setNote('deleted', true);
+        // the State's own context, which `mounted` speaks for
+        if (mounted) this.context.pop();
+      }
+    }
 
     return Theme(
       data: theme,
@@ -284,6 +324,10 @@ class _NotePageState extends ConsumerState<NotePage> {
         backgroundColor: theme.colorScheme.surface,
         appBar: AppBar(
           backgroundColor: theme.colorScheme.surface,
+          scrolledUnderElevation: 0,
+          leading: widget.inDialog
+              ? IconButton(tooltip: 'Close', icon: const Icon(Icons.close), onPressed: () => context.pop())
+              : null,
           actions: [
             IconButton(
               tooltip: state.pinned ? 'Unpin' : 'Pin',
@@ -297,45 +341,30 @@ class _NotePageState extends ConsumerState<NotePage> {
               isSelected: state.archived,
               icon: const Icon(Icons.archive_outlined),
               selectedIcon: const Icon(Icons.unarchive_outlined),
-              onPressed: _exists
-                  ? () {
-                      _setState('archived', !state.archived);
-                      if (!state.archived) context.pop();
-                    }
-                  : null,
+              onPressed: _exists ? archive : null,
             ),
             MenuAnchor(
               builder: (context, ctl, _) => IconButton(
-                tooltip: 'More',
+                tooltip: 'More options',
                 icon: const Icon(Icons.more_vert),
                 onPressed: () => ctl.isOpen ? ctl.close() : ctl.open(),
               ),
               menuChildren: [
-                MenuItemButton(
-                  leadingIcon: Icon(isList ? Icons.notes : Icons.checklist),
-                  onPressed: () => _convert(note, items),
-                  child: Text(isList ? 'Turn into a note' : 'Turn into a checklist'),
-                ),
                 if (owned && _exists)
                   MenuItemButton(
                     leadingIcon: Icon(trashed ? Icons.restore_from_trash_outlined : Icons.delete_outline),
-                    onPressed: () {
-                      _setNote('trashed', trashed ? '' : DateTime.now().toUtc().toIso8601String());
-                      if (!trashed) context.pop();
-                    },
-                    child: Text(trashed ? 'Restore' : 'Move to trash'),
+                    onPressed: trash,
+                    child: Text(trashed ? 'Restore' : 'Delete'),
                   ),
                 if (owned && trashed)
                   MenuItemButton(
                     leadingIcon: const Icon(Icons.delete_forever_outlined),
-                    onPressed: () {
-                      _setNote('deleted', true);
-                      context.pop();
-                    },
+                    onPressed: deleteForever,
                     child: const Text('Delete forever'),
                   ),
               ],
             ),
+            const SizedBox(width: 4),
           ],
         ),
         body: ListView(
@@ -350,9 +379,10 @@ class _NotePageState extends ConsumerState<NotePage> {
                     TextField(
                       controller: _title,
                       focusNode: _titleFocus,
-                      style: text.headlineSmall,
+                      style: text.titleLarge,
                       decoration: const InputDecoration(hintText: 'Title'),
                       textInputAction: TextInputAction.next,
+                      textCapitalization: TextCapitalization.sentences,
                       onChanged: (v) => _later('title', () => _setNote('title', v)),
                       onSubmitted: (_) => isList
                           ? (open.isEmpty ? _addItem(items) : _itemNode(open.first.id).requestFocus())
@@ -367,6 +397,7 @@ class _NotePageState extends ConsumerState<NotePage> {
                         maxLines: null,
                         minLines: 6,
                         keyboardType: TextInputType.multiline,
+                        textCapitalization: TextCapitalization.sentences,
                         onChanged: (v) => _later('body', () => _setNote('body', v)),
                       ),
                     if (isList) ...[
@@ -381,7 +412,11 @@ class _NotePageState extends ConsumerState<NotePage> {
                         const Divider(),
                         ListTile(
                           contentPadding: const EdgeInsets.only(left: 16),
-                          leading: Icon(_showChecked ? Icons.expand_less : Icons.expand_more),
+                          leading: AnimatedRotation(
+                            turns: _showChecked ? 0 : -0.25,
+                            duration: const Duration(milliseconds: 200),
+                            child: const Icon(Icons.expand_more),
+                          ),
                           title: Text('${checked.length} checked item${checked.length == 1 ? '' : 's'}'),
                           onTap: () => setState(() => _showChecked = !_showChecked),
                         ),
@@ -395,22 +430,120 @@ class _NotePageState extends ConsumerState<NotePage> {
             ),
           ],
         ),
-        bottomNavigationBar: _ColorBar(
-          current: note?.color ?? '',
+        bottomNavigationBar: _NoteBar(
+          isList: isList,
+          color: note?.color ?? '',
           edited: note?.updated ?? '',
-          onPick: (c) => _setNote('color', c),
+          onToggleList: () => _convert(note, items),
+          onColor: (c) => _setNote('color', c),
         ),
       ),
     );
   }
 }
 
-/// The note's colors and when it was last edited, along the bottom.
-class _ColorBar extends StatelessWidget {
-  const _ColorBar({required this.current, required this.edited, required this.onPick});
-  final String current;
+/// A checklist row. The remove button shows on the row being edited or
+/// pointed at, not on every row at once.
+class _ItemRow extends StatefulWidget {
+  const _ItemRow({
+    super.key,
+    required this.item,
+    required this.controller,
+    required this.focusNode,
+    required this.onCheck,
+    required this.onChanged,
+    required this.onSubmitted,
+    required this.onRemove,
+  });
+
+  final Item item;
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final ValueChanged<bool> onCheck;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onSubmitted;
+  final VoidCallback onRemove;
+
+  @override
+  State<_ItemRow> createState() => _ItemRowState();
+}
+
+class _ItemRowState extends State<_ItemRow> {
+  bool _hover = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.focusNode.addListener(_refresh);
+  }
+
+  @override
+  void dispose() {
+    widget.focusNode.removeListener(_refresh);
+    super.dispose();
+  }
+
+  void _refresh() => setState(() {});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final it = widget.item;
+    final active = _hover || widget.focusNode.hasFocus;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: Padding(
+        padding: EdgeInsets.only(left: 4.0 + it.indent * 28),
+        child: Row(
+          children: [
+            Checkbox(value: it.checked, onChanged: (v) => widget.onCheck(v ?? false)),
+            Expanded(
+              child: TextField(
+                controller: widget.controller,
+                focusNode: widget.focusNode,
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  decoration: it.checked ? TextDecoration.lineThrough : null,
+                  color: it.checked ? theme.colorScheme.onSurfaceVariant : null,
+                ),
+                decoration: const InputDecoration(hintText: 'List item', isDense: true),
+                textInputAction: TextInputAction.next,
+                textCapitalization: TextCapitalization.sentences,
+                onChanged: widget.onChanged,
+                onSubmitted: (_) => widget.onSubmitted(),
+              ),
+            ),
+            AnimatedOpacity(
+              opacity: active ? 1 : 0,
+              duration: const Duration(milliseconds: 150),
+              child: IconButton(
+                tooltip: 'Remove ${it.text}',
+                icon: const Icon(Icons.close),
+                onPressed: active ? widget.onRemove : null,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Along the bottom: switch note and checklist, the color sheet, and when
+/// the note was last edited.
+class _NoteBar extends StatelessWidget {
+  const _NoteBar({
+    required this.isList,
+    required this.color,
+    required this.edited,
+    required this.onToggleList,
+    required this.onColor,
+  });
+  final bool isList;
+  final String color;
   final String edited;
-  final ValueChanged<String> onPick;
+  final VoidCallback onToggleList;
+  final ValueChanged<String> onColor;
 
   @override
   Widget build(BuildContext context) {
@@ -421,30 +554,110 @@ class _ColorBar extends StatelessWidget {
       height: 64,
       child: Row(
         children: [
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                spacing: 8,
-                children: [
-                  for (final name in ['', ...noteHues.keys])
-                    _Swatch(name: name, selected: name == current, onTap: () => onPick(name)),
-                ],
-              ),
-            ),
+          IconButton(
+            tooltip: isList ? 'Turn into a note' : 'Turn into a checklist',
+            isSelected: isList,
+            icon: const Icon(Icons.check_box_outlined),
+            selectedIcon: const Icon(Icons.check_box),
+            onPressed: onToggleList,
           ),
-          if (when != null)
-            Padding(
-              padding: const EdgeInsets.only(left: 12),
-              child: Text(
-                'Edited ${TimeOfDay.fromDateTime(when).format(context)}',
-                style: theme.textTheme.labelMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          // Expanded windows: a popover beside the button (a menu, Material's
+          // pattern for a small anchored choice). Compact: a bottom sheet.
+          if (isExpanded(context))
+            MenuAnchor(
+              builder: (context, ctl, _) => IconButton(
+                tooltip: 'Background color',
+                icon: const Icon(Icons.palette_outlined),
+                onPressed: () => ctl.isOpen ? ctl.close() : ctl.open(),
+              ),
+              menuChildren: [
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: SizedBox(
+                    width: 348, // two rows of six
+                    child: _Swatches(current: color, onPick: onColor),
+                  ),
+                ),
+              ],
+            )
+          else
+            IconButton(
+              tooltip: 'Background color',
+              icon: const Icon(Icons.palette_outlined),
+              onPressed: () => showModalBottomSheet<void>(
+                context: context,
+                showDragHandle: true,
+                builder: (_) => _ColorSheet(current: color, onPick: onColor),
               ),
             ),
+          const Spacer(),
+          if (when != null)
+            Text(
+              'Edited ${_when(context, when)}',
+              style: theme.textTheme.labelMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+          const SizedBox(width: 12),
         ],
       ),
     );
   }
+
+  static String _when(BuildContext context, DateTime d) {
+    final time = TimeOfDay.fromDateTime(d).format(context);
+    return DateUtils.isSameDay(d, DateTime.now())
+        ? time
+        : '${MaterialLocalizations.of(context).formatShortMonthDay(d)}, $time';
+  }
+}
+
+/// The note colors as a sheet. The chosen one carries a check, so the choice
+/// does not rest on color alone.
+class _ColorSheet extends StatelessWidget {
+  const _ColorSheet({required this.current, required this.onPick});
+  final String current;
+  final ValueChanged<String> onPick;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Color', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 16),
+            _Swatches(
+              current: current,
+              onPick: (c) {
+                onPick(c);
+                Navigator.pop(context);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The ten note colors and "default", the chosen one checked.
+class _Swatches extends StatelessWidget {
+  const _Swatches({required this.current, required this.onPick});
+  final String current;
+  final ValueChanged<String> onPick;
+
+  @override
+  Widget build(BuildContext context) => Wrap(
+    spacing: 12,
+    runSpacing: 12,
+    children: [
+      for (final name in ['', ...noteHues.keys])
+        _Swatch(name: name, selected: name == current, onTap: () => onPick(name)),
+    ],
+  );
 }
 
 class _Swatch extends StatelessWidget {
@@ -456,27 +669,37 @@ class _Swatch extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final hue = noteHues[name];
+    final scheme = noteScheme(name, theme.brightness);
+    final fill = scheme?.primaryContainer ?? theme.colorScheme.surface;
+    final ink = scheme?.onPrimaryContainer ?? theme.colorScheme.onSurface;
+    final label = name.isEmpty ? 'Default' : '${name[0].toUpperCase()}${name.substring(1)}';
     return Tooltip(
-      message: name.isEmpty ? 'No color' : name,
-      child: InkResponse(
-        onTap: onTap,
-        radius: 22,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          width: 32,
-          height: 32,
-          decoration: BoxDecoration(
-            color: hue ?? theme.colorScheme.surfaceContainerHighest,
-            shape: BoxShape.circle,
-            border: Border.all(
-              color: selected ? theme.colorScheme.onSurface : theme.colorScheme.outlineVariant,
-              width: selected ? 2.5 : 1,
+      message: label,
+      child: Semantics(
+        button: true,
+        selected: selected,
+        label: '$label color',
+        child: InkResponse(
+          onTap: onTap,
+          radius: 28,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: fill,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: selected ? theme.colorScheme.primary : theme.colorScheme.outlineVariant,
+                width: selected ? 2.5 : 1,
+              ),
             ),
+            child: selected
+                ? Icon(Icons.check, color: ink)
+                : (name.isEmpty
+                      ? Icon(Icons.format_color_reset_outlined, color: theme.colorScheme.onSurfaceVariant)
+                      : null),
           ),
-          child: name.isEmpty
-              ? Icon(Icons.format_color_reset_outlined, size: 18, color: theme.colorScheme.onSurfaceVariant)
-              : null,
         ),
       ),
     );

@@ -74,8 +74,11 @@ final class ThemeSpec {
       surfaceContainer: step(0.06),
       surfaceContainerHigh: container ?? step(0.09),
       surfaceContainerHighest: step(0.13),
-      outline: outline ?? step(0.2),
-      outlineVariant: step(0.14),
+      // Material's outline variant is the hairline (card borders, dividers):
+      // the theme's own outline. The stronger outline (text-field borders)
+      // sits well above it, or outlined cards vanish on a black background.
+      outline: step(0.45),
+      outlineVariant: outline ?? step(0.2),
       error: error,
     );
   }

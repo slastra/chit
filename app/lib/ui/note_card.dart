@@ -8,8 +8,9 @@ import '../state/providers.dart';
 import 'note_colors.dart';
 
 /// A note on the grid: title, the start of the body or the open items, and
-/// small marks for pinned, reminder, shared and files. A colored note draws
-/// in its color's tonal container. Lists check off right on the card.
+/// small marks for pinned, reminder, shared and files. A plain note is an
+/// outlined card; a colored one fills with its color's tonal container (as
+/// Keep draws them). Lists check off right on the card.
 class NoteCard extends ConsumerWidget {
   const NoteCard({super.key, required this.note, required this.library});
 
@@ -22,7 +23,6 @@ class NoteCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final scheme = noteScheme(note.color, theme.brightness);
-    final fill = scheme?.primaryContainer ?? theme.colorScheme.surfaceContainerHigh;
     final ink = scheme?.onPrimaryContainer ?? theme.colorScheme.onSurface;
     final faint = ink.withValues(alpha: 0.7);
     final text = theme.textTheme;
@@ -36,63 +36,88 @@ class NoteCard extends ConsumerWidget {
         (library.members[note.id]?.isNotEmpty ?? false) || note.owner != ref.watch(sessionProvider).value?.user.id;
     final reminder = state.reminderDone ? '' : state.reminder;
 
-    return Card.filled(
-      color: fill,
-      child: InkWell(
-        onTap: () => context.push('/note/${note.id}'),
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            spacing: 6,
-            children: [
-              if (note.title.isNotEmpty || (note.body.isEmpty && items.isEmpty))
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        note.label.isEmpty ? 'Empty note' : note.label,
-                        style: text.titleMedium?.copyWith(color: ink, fontWeight: FontWeight.w600),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
+    final more = open.length - _itemsShown;
+    final hasFooter = reminder.isNotEmpty || shared || files.isNotEmpty || (note.isList && (more > 0 || done > 0));
+    final rule = scheme?.onPrimaryContainer.withValues(alpha: 0.16) ?? theme.colorScheme.outlineVariant;
+
+    final body = InkWell(
+      onTap: () => context.push('/note/${note.id}'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // content: title, then the text or the open items
+          Padding(
+            padding: EdgeInsets.fromLTRB(14, 14, 14, hasFooter ? 10 : 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              spacing: 6,
+              children: [
+                if (note.title.isNotEmpty || (note.body.isEmpty && items.isEmpty))
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          note.label.isEmpty ? 'Empty note' : note.label,
+                          style: text.titleMedium?.copyWith(color: ink, fontWeight: FontWeight.w600),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                    ),
-                    if (state.pinned) Icon(Icons.push_pin, size: 16, color: faint),
-                  ],
-                ),
-              if (!note.isList && note.body.isNotEmpty)
-                Text(
-                  note.body,
-                  style: text.bodyMedium?.copyWith(color: ink),
-                  maxLines: 10,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              if (note.isList)
-                for (final it in open.take(_itemsShown)) _ItemLine(item: it, ink: ink, onCheck: () => _check(ref, it)),
-              if (note.isList && (open.length > _itemsShown || done > 0))
-                Text(
-                  [
-                    if (open.length > _itemsShown) '${open.length - _itemsShown} more',
-                    if (done > 0) '$done checked',
-                  ].join(' · '),
-                  style: text.labelMedium?.copyWith(color: faint),
-                ),
-              if (reminder.isNotEmpty || shared || files.isNotEmpty)
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 4,
-                  children: [
-                    if (reminder.isNotEmpty) _Mark(icon: Icons.alarm, label: _when(context, reminder), ink: faint),
-                    if (shared) _Mark(icon: Icons.group_outlined, ink: faint),
-                    if (files.isNotEmpty) _Mark(icon: Icons.attach_file, label: '${files.length}', ink: faint),
-                  ],
-                ),
-            ],
+                      if (state.pinned) Icon(Icons.push_pin, size: 16, color: faint),
+                    ],
+                  ),
+                if (!note.isList && note.body.isNotEmpty)
+                  Text(
+                    note.body,
+                    style: text.bodyMedium?.copyWith(color: ink),
+                    maxLines: 10,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                if (note.isList)
+                  for (final it in open.take(_itemsShown))
+                    _ItemLine(item: it, ink: ink, onCheck: () => _check(ref, it)),
+              ],
+            ),
           ),
-        ),
+          // footer: the note's specifics, below a hairline (Material's card
+          // anatomy: a separate bottom region for metadata and actions)
+          if (hasFooter) ...[
+            Divider(height: 1, thickness: 1, color: rule),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 8, 14, 8),
+              child: Wrap(
+                spacing: 10,
+                runSpacing: 6,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  if (reminder.isNotEmpty) _ReminderChip(label: _when(context, reminder), scheme: scheme),
+                  if (note.isList && more > 0) _Mark(label: '$more more', ink: faint),
+                  if (note.isList && done > 0) _Mark(icon: Icons.check, label: '$done checked', ink: faint),
+                  if (files.isNotEmpty) _Mark(icon: Icons.attach_file, label: '${files.length}', ink: faint),
+                  if (shared) _Mark(icon: Icons.group_outlined, ink: faint, tooltip: 'Shared'),
+                ],
+              ),
+            ),
+          ],
+        ],
       ),
     );
+    // The theme's card shape (the desktop's corner radius) has no border, and
+    // would erase the outlined card's; put the hairline back on it.
+    final corners = theme.cardTheme.shape is RoundedRectangleBorder
+        ? (theme.cardTheme.shape! as RoundedRectangleBorder).borderRadius
+        : const BorderRadius.all(Radius.circular(12));
+    return scheme == null
+        ? Card.outlined(
+            color: theme.colorScheme.surface,
+            shape: RoundedRectangleBorder(
+              borderRadius: corners,
+              side: BorderSide(color: theme.colorScheme.outlineVariant),
+            ),
+            child: body,
+          )
+        : Card.filled(color: scheme.primaryContainer, child: body);
   }
 
   void _check(WidgetRef ref, Item it) {
@@ -121,13 +146,18 @@ class _ItemLine extends StatelessWidget {
   Widget build(BuildContext context) => Row(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      // its own tap target, so checking does not open the note
-      InkResponse(
-        onTap: onCheck,
-        radius: 16,
-        child: Padding(
-          padding: const EdgeInsets.only(right: 8, top: 1),
-          child: Icon(Icons.check_box_outline_blank, size: 18, color: ink),
+      // its own tap target (taller than the glyph, so it is easy to hit),
+      // so checking does not open the note
+      Semantics(
+        button: true,
+        label: 'Check ${item.text}',
+        child: InkResponse(
+          onTap: onCheck,
+          radius: 18,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(2, 2, 10, 2),
+            child: Icon(Icons.check_box_outline_blank, size: 18, color: ink),
+          ),
         ),
       ),
       Expanded(
@@ -143,18 +173,51 @@ class _ItemLine extends StatelessWidget {
 }
 
 class _Mark extends StatelessWidget {
-  const _Mark({required this.icon, this.label = '', required this.ink});
-  final IconData icon;
+  const _Mark({this.icon, this.label = '', required this.ink, this.tooltip});
+  final IconData? icon;
   final String label;
   final Color ink;
+  final String? tooltip;
 
   @override
-  Widget build(BuildContext context) => Row(
-    mainAxisSize: MainAxisSize.min,
-    spacing: 4,
-    children: [
-      Icon(icon, size: 14, color: ink),
-      if (label.isNotEmpty) Text(label, style: Theme.of(context).textTheme.labelSmall?.copyWith(color: ink)),
-    ],
-  );
+  Widget build(BuildContext context) {
+    final mark = Row(
+      mainAxisSize: MainAxisSize.min,
+      spacing: 4,
+      children: [
+        if (icon != null) Icon(icon, size: 14, color: ink),
+        if (label.isNotEmpty) Text(label, style: Theme.of(context).textTheme.labelMedium?.copyWith(color: ink)),
+      ],
+    );
+    return tooltip == null ? mark : Tooltip(message: tooltip, child: mark);
+  }
+}
+
+/// A reminder, as a small tonal chip (Material's assist-chip look, sized for
+/// a card): it is state on the note, not just a caption.
+class _ReminderChip extends StatelessWidget {
+  const _ReminderChip({required this.label, required this.scheme});
+  final String label;
+  final ColorScheme? scheme;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = scheme ?? Theme.of(context).colorScheme;
+    final bg = scheme == null ? cs.secondaryContainer : cs.onPrimaryContainer.withValues(alpha: 0.12);
+    final fg = scheme == null ? cs.onSecondaryContainer : cs.onPrimaryContainer;
+    return DecoratedBox(
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          spacing: 4,
+          children: [
+            Icon(Icons.alarm, size: 14, color: fg),
+            Text(label, style: Theme.of(context).textTheme.labelMedium?.copyWith(color: fg)),
+          ],
+        ),
+      ),
+    );
+  }
 }

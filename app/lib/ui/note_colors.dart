@@ -28,6 +28,11 @@ ColorScheme? noteScheme(String name, Brightness brightness) {
   return _cache[(name, brightness)] ??= ColorScheme.fromSeed(
     seedColor: hue,
     brightness: brightness,
-    dynamicSchemeVariant: DynamicSchemeVariant.tonalSpot,
+    // tonal spot lifts chroma, which turns the muted seeds into their hue
+    // (gray went blue, brown went orange); those two keep their muted look
+    dynamicSchemeVariant: switch (name) {
+      'gray' || 'brown' => DynamicSchemeVariant.neutral,
+      _ => DynamicSchemeVariant.tonalSpot,
+    },
   );
 }

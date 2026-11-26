@@ -38,6 +38,9 @@ ThemeData themeFor(ColorScheme scheme, [ThemeSpec? spec]) {
     ),
     inputDecorationTheme: const InputDecorationTheme(border: InputBorder.none),
     cardTheme: CardThemeData(margin: EdgeInsets.zero, clipBehavior: Clip.antiAlias, shape: corners),
+    dialogTheme: corners == null ? null : DialogThemeData(shape: corners),
+    // sheets and menus a step above the page, so they read on a black one
+    bottomSheetTheme: BottomSheetThemeData(backgroundColor: scheme.surfaceContainerHigh),
   );
 }
 
