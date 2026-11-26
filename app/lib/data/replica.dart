@@ -40,25 +40,29 @@ final class Replica {
       collection == Collections.notes ? rec['id'] as String? ?? '' : rec['note'] as String? ?? '';
 
   Future<Json?> _load(String collection, String id) async {
-    final row = await (db.select(db.records)..where((r) => r.collection.equals(collection) & r.id.equals(id)))
-        .getSingleOrNull();
+    final row = await (db.select(
+      db.records,
+    )..where((r) => r.collection.equals(collection) & r.id.equals(id))).getSingleOrNull();
     return row == null ? null : (decodeJson(row.data)! as Map).cast<String, Object?>();
   }
 
-  Future<void> _store(String collection, Json rec) => db.into(db.records).insertOnConflictUpdate(
-    RecordsCompanion.insert(
-      collection: collection,
-      id: _keyOf(collection, rec),
-      note: Value(_noteOf(collection, rec)),
-      data: encodeJson(rec),
-    ),
-  );
+  Future<void> _store(String collection, Json rec) => db
+      .into(db.records)
+      .insertOnConflictUpdate(
+        RecordsCompanion.insert(
+          collection: collection,
+          id: _keyOf(collection, rec),
+          note: Value(_noteOf(collection, rec)),
+          data: encodeJson(rec),
+        ),
+      );
 
   /// PocketBase's datetime format, so local and server stamps sort together.
-  String _stamp() => _now().toUtc().toIso8601String().replaceFirst('T', ' ').replaceFirstMapped(
-    RegExp(r'(\.\d{3})\d*Z$'),
-    (m) => '${m[1]}Z',
-  );
+  String _stamp() => _now()
+      .toUtc()
+      .toIso8601String()
+      .replaceFirst('T', ' ')
+      .replaceFirstMapped(RegExp(r'(\.\d{3})\d*Z$'), (m) => '${m[1]}Z');
 
   /// Bumps a note's `updated`, so recently edited notes sort first even for
   /// edits the feed reports field by field.
@@ -158,8 +162,7 @@ final class Replica {
     return (db.selectOnly(db.outbox)..addColumns([count])).map((r) => r.read(count) ?? 0).watchSingle();
   }
 
-  Future<void> ack(Iterable<int> seqs) =>
-      (db.delete(db.outbox)..where((o) => o.seq.isIn(seqs))).go();
+  Future<void> ack(Iterable<int> seqs) => (db.delete(db.outbox)..where((o) => o.seq.isIn(seqs))).go();
 
   // ---- reading -------------------------------------------------------------
 
@@ -228,7 +231,13 @@ final class Library {
   final Map<String, NoteState> states; // by note
   final Map<String, List<Attachment>> attachments; // by note
 
-  static final empty = Library(notes: const [], items: const {}, members: const {}, states: const {}, attachments: const {});
+  static final empty = Library(
+    notes: const [],
+    items: const {},
+    members: const {},
+    states: const {},
+    attachments: const {},
+  );
 
   factory Library.fromRows(List<StoredRecord> rows) {
     Json data(StoredRecord r) => (decodeJson(r.data)! as Map).cast<String, Object?>();

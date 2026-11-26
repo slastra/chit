@@ -60,7 +60,11 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                 const SizedBox(height: 16),
                 Text('chit', textAlign: TextAlign.center, style: theme.textTheme.displaySmall),
                 const SizedBox(height: 32),
-                TextField(controller: _server, decoration: field('Server', Icons.dns_outlined), keyboardType: TextInputType.url),
+                TextField(
+                  controller: _server,
+                  decoration: field('Server', Icons.dns_outlined),
+                  keyboardType: TextInputType.url,
+                ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: _email,
@@ -83,7 +87,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                 const SizedBox(height: 24),
                 FilledButton(
                   onPressed: _busy ? null : _signIn,
-                  child: _busy ? const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Sign in'),
+                  child: _busy
+                      ? const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Text('Sign in'),
                 ),
               ],
             ),

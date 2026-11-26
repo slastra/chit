@@ -32,8 +32,14 @@ final _router = Provider<GoRouter>((ref) {
     routes: [
       GoRoute(path: '/', builder: (_, _) => const HomePage()),
       GoRoute(path: '/login', builder: (_, _) => const LoginPage()),
-      GoRoute(path: '/note/new', builder: (_, state) => NotePage(list: state.uri.queryParameters['list'] == '1')),
-      GoRoute(path: '/note/:id', builder: (_, state) => NotePage(noteId: state.pathParameters['id'])),
+      GoRoute(
+        path: '/note/new',
+        builder: (_, state) => NotePage(list: state.uri.queryParameters['list'] == '1'),
+      ),
+      GoRoute(
+        path: '/note/:id',
+        builder: (_, state) => NotePage(noteId: state.pathParameters['id']),
+      ),
     ],
   );
 });

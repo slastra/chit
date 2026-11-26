@@ -88,8 +88,11 @@ final class ChitApi {
   /// Signs in; returns the token and the account.
   Future<({String token, Person user})> login(String email, String password) async {
     try {
-      final j = await _send('POST', '/api/collections/users/auth-with-password',
-          body: {'identity': email, 'password': password}) as Json;
+      final j = await _send(
+        'POST',
+        '/api/collections/users/auth-with-password',
+        body: {'identity': email, 'password': password},
+      ) as Json;
       return (token: j['token']! as String, user: Person.fromJson((j['record']! as Map).cast()));
     } on ApiError catch (e) {
       if (e.status == 400) throw const ApiError(400, 'Wrong email or password.');
@@ -125,7 +128,14 @@ final class ChitApi {
   Future<Snapshot> snapshot() async => Snapshot.fromJson((await _send('GET', '/api/chit/snapshot'))! as Json);
 
   Future<({int seq, List<OpResult> results})> ops(List<Op> ops) async {
-    final j = await _send('POST', '/api/chit/ops', body: {'device': device, 'ops': [for (final o in ops) o.toJson()]}) as Json;
+    final j = await _send(
+      'POST',
+      '/api/chit/ops',
+      body: {
+        'device': device,
+        'ops': [for (final o in ops) o.toJson()],
+      },
+    ) as Json;
     return (
       seq: (j['seq'] as num?)?.toInt() ?? 0,
       results: [for (final r in (j['results'] as List? ?? const [])) opResultFromJson((r as Map).cast())],
@@ -133,7 +143,8 @@ final class ChitApi {
   }
 
   Future<int> share(String note, String user, {String role = 'editor'}) async =>
-      ((await _send('POST', '/api/chit/notes/$note/members', body: {'user': user, 'role': role}) as Json)['seq'] as num?)
+      ((await _send('POST', '/api/chit/notes/$note/members', body: {'user': user, 'role': role}) as Json)['seq']
+              as num?)
           ?.toInt() ??
       0;
 

@@ -17,14 +17,31 @@ Op op(String collection, String id, String field, Object? value, String hlc) =>
 Future<Replica> seeded() async {
   final r = Replica(ChitDb(NativeDatabase.memory()));
   await r.setMeta('user', me);
-  await r.replaceAll(Snapshot(seq: 10, records: {
-    Collections.notes: [
-      {'id': list, 'owner': me, 'kind': 'list', 'title': 'Groceries', 'clocks': {'title': '1795651200000-0000-srv'}},
-    ],
-    Collections.items: [
-      {'id': milk, 'note': list, 'text': 'milk', 'order': '1', 'clocks': {'text': '1795651200000-0000-srv'}},
-    ],
-  }));
+  await r.replaceAll(
+    Snapshot(
+      seq: 10,
+      records: {
+        Collections.notes: [
+          {
+            'id': list,
+            'owner': me,
+            'kind': 'list',
+            'title': 'Groceries',
+            'clocks': {'title': '1795651200000-0000-srv'},
+          },
+        ],
+        Collections.items: [
+          {
+            'id': milk,
+            'note': list,
+            'text': 'milk',
+            'order': '1',
+            'clocks': {'text': '1795651200000-0000-srv'},
+          },
+        ],
+      },
+    ),
+  );
   return r;
 }
 
@@ -52,8 +69,24 @@ void main() {
   test('feed merges per field', () async {
     final r = await seeded();
     await r.applyChanges([
-      const Change(seq: 11, kind: ChangeKind.set, collection: Collections.items, record: milk, field: 'text', value: 'oat milk', hlc: '1795651300000-0000-pix'),
-      const Change(seq: 12, kind: ChangeKind.set, collection: Collections.notes, record: list, field: 'title', value: 'stale', hlc: '1795651100000-0000-pix'),
+      const Change(
+        seq: 11,
+        kind: ChangeKind.set,
+        collection: Collections.items,
+        record: milk,
+        field: 'text',
+        value: 'oat milk',
+        hlc: '1795651300000-0000-pix',
+      ),
+      const Change(
+        seq: 12,
+        kind: ChangeKind.set,
+        collection: Collections.notes,
+        record: list,
+        field: 'title',
+        value: 'stale',
+        hlc: '1795651100000-0000-pix',
+      ),
     ], 12);
     final lib = await r.read();
     expect(lib.items[list]!.single.text, 'oat milk');
@@ -65,10 +98,20 @@ void main() {
     final r = await seeded();
     await r.applyLocal([op(Collections.notes, list, 'title', 'Weekly groceries', '1795651400000-0000-desk')], me);
     await r.applyChanges([
-      Change(seq: 11, kind: ChangeKind.record, collection: Collections.notes, record: list, value: {
-        'id': list, 'owner': me, 'kind': 'list', 'title': 'Groceries', 'color': 'green',
-        'clocks': {'title': '1795651200000-0000-srv', 'color': '1795651500000-0000-srv'},
-      }),
+      Change(
+        seq: 11,
+        kind: ChangeKind.record,
+        collection: Collections.notes,
+        record: list,
+        value: {
+          'id': list,
+          'owner': me,
+          'kind': 'list',
+          'title': 'Groceries',
+          'color': 'green',
+          'clocks': {'title': '1795651200000-0000-srv', 'color': '1795651500000-0000-srv'},
+        },
+      ),
     ], 11);
     final n = (await r.read()).notes.single;
     expect((n.title, n.color), ('Weekly groceries', 'green'));
@@ -77,8 +120,18 @@ void main() {
   test('revoke drops the note and everything under it', () async {
     final r = await seeded();
     await r.applyChanges([
-      Change(seq: 11, kind: ChangeKind.record, collection: Collections.noteState, record: list,
-          value: {'note': list, 'pinned': true, 'labels': <String>[], 'clocks': {'pinned': '1795651200000-0000-srv'}}),
+      Change(
+        seq: 11,
+        kind: ChangeKind.record,
+        collection: Collections.noteState,
+        record: list,
+        value: {
+          'note': list,
+          'pinned': true,
+          'labels': <String>[],
+          'clocks': {'pinned': '1795651200000-0000-srv'},
+        },
+      ),
       const Change(seq: 12, kind: ChangeKind.revoke, collection: Collections.notes, record: list),
     ], 12);
     final lib = await r.read();
@@ -95,10 +148,19 @@ void main() {
       op(Collections.notes, 'note00000000009', 'title', 'Written offline', c.now()),
       op(Collections.items, milk, 'checked', true, c.now()),
     ], me);
-    await r.replaceAll(Snapshot(seq: 10, records: {
-      Collections.notes: [{'id': list, 'owner': me, 'kind': 'list', 'title': 'Groceries'}],
-      Collections.items: [{'id': milk, 'note': list, 'text': 'milk', 'order': '1'}],
-    }));
+    await r.replaceAll(
+      Snapshot(
+        seq: 10,
+        records: {
+          Collections.notes: [
+            {'id': list, 'owner': me, 'kind': 'list', 'title': 'Groceries'},
+          ],
+          Collections.items: [
+            {'id': milk, 'note': list, 'text': 'milk', 'order': '1'},
+          ],
+        },
+      ),
+    );
     final lib = await r.read();
     expect(lib.notes.where((n) => n.title == 'Written offline' && n.owner == me), hasLength(1));
     expect(lib.items[list]!.single.checked, isTrue);

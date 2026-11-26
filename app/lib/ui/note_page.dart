@@ -50,7 +50,9 @@ class _NotePageState extends ConsumerState<NotePage> {
   @override
   void initState() {
     super.initState();
-    if (!_exists) WidgetsBinding.instance.addPostFrameCallback((_) => (_listWhileNew ? null : _bodyFocus.requestFocus()));
+    if (!_exists && !_listWhileNew) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _bodyFocus.requestFocus());
+    }
   }
 
   @override
@@ -115,7 +117,10 @@ class _NotePageState extends ConsumerState<NotePage> {
     if (!_exists) return;
     final lib = ref.read(libraryProvider).value;
     final items = lib?.items[_id] ?? const <Item>[];
-    final empty = _title.text.trim().isEmpty && _body.text.trim().isEmpty && items.every((i) => i.text.trim().isEmpty) &&
+    final empty =
+        _title.text.trim().isEmpty &&
+        _body.text.trim().isEmpty &&
+        items.every((i) => i.text.trim().isEmpty) &&
         (lib?.attachments[_id]?.isEmpty ?? true);
     if (empty && widget.noteId == null) _edit(() => [_op(Collections.notes, _id, 'deleted', true)]);
   }
@@ -131,17 +136,21 @@ class _NotePageState extends ConsumerState<NotePage> {
   void _addItem(List<Item> items, {Item? after}) {
     final open = items.where((i) => !i.checked).toList();
     final prev = after?.order ?? (open.isEmpty ? '' : open.last.order);
-    final next = after == null ? '' : (() {
-      final i = items.indexWhere((x) => x.id == after.id);
-      return i + 1 < items.length ? items[i + 1].order : '';
-    })();
+    final next = after == null
+        ? ''
+        : (() {
+            final i = items.indexWhere((x) => x.id == after.id);
+            return i + 1 < items.length ? items[i + 1].order : '';
+          })();
     final id = randomId();
     _focusNext = id;
-    _edit(() => [
-      _op(Collections.items, id, 'note', _id),
-      _op(Collections.items, id, 'text', ''),
-      _op(Collections.items, id, 'order', orderBetween(prev, next == prev ? '' : next)),
-    ]);
+    _edit(
+      () => [
+        _op(Collections.items, id, 'note', _id),
+        _op(Collections.items, id, 'text', ''),
+        _op(Collections.items, id, 'order', orderBetween(prev, next == prev ? '' : next)),
+      ],
+    );
   }
 
   /// A checklist becomes text (one line per item, open ones first) or text
@@ -153,23 +162,31 @@ class _NotePageState extends ConsumerState<NotePage> {
     }
     if (note?.isList ?? false) {
       final lines = [...items.where((i) => !i.checked), ...items.where((i) => i.checked)].map((i) => i.text);
-      _edit(() => [
-        for (final i in items) _op(Collections.items, i.id, 'deleted', true),
-        _op(Collections.notes, _id, 'body', lines.join('\n')),
-        _op(Collections.notes, _id, 'kind', 'text'),
-      ]);
+      _edit(
+        () => [
+          for (final i in items) _op(Collections.items, i.id, 'deleted', true),
+          _op(Collections.notes, _id, 'body', lines.join('\n')),
+          _op(Collections.notes, _id, 'kind', 'text'),
+        ],
+      );
     } else {
       var last = '';
-      _edit(() => [
-        for (final line in _body.text.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty))
-          ...(() {
-            final id = randomId();
-            last = orderAfter(last);
-            return [_op(Collections.items, id, 'note', _id), _op(Collections.items, id, 'text', line), _op(Collections.items, id, 'order', last)];
-          })(),
-        _op(Collections.notes, _id, 'body', ''),
-        _op(Collections.notes, _id, 'kind', 'list'),
-      ]);
+      _edit(
+        () => [
+          for (final line in _body.text.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty))
+            ...(() {
+              final id = randomId();
+              last = orderAfter(last);
+              return [
+                _op(Collections.items, id, 'note', _id),
+                _op(Collections.items, id, 'text', line),
+                _op(Collections.items, id, 'order', last),
+              ];
+            })(),
+          _op(Collections.notes, _id, 'body', ''),
+          _op(Collections.notes, _id, 'kind', 'list'),
+        ],
+      );
     }
   }
 
@@ -183,15 +200,21 @@ class _NotePageState extends ConsumerState<NotePage> {
 
     // An open note that went away (deleted elsewhere, access revoked).
     if (widget.noteId != null && note == null && ref.watch(libraryProvider).hasValue) {
-      WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) context.pop(); });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) context.pop();
+      });
     }
     if (note != null && !_loaded) {
       _loaded = true;
       _title.text = note.title;
       _body.text = note.body;
     } else if (note != null) {
-      if (!_titleFocus.hasFocus && !_pendingSends.containsKey('title') && _title.text != note.title) _title.text = note.title;
-      if (!_bodyFocus.hasFocus && !_pendingSends.containsKey('body') && _body.text != note.body) _body.text = note.body;
+      if (!_titleFocus.hasFocus && !_pendingSends.containsKey('title') && _title.text != note.title) {
+        _title.text = note.title;
+      }
+      if (!_bodyFocus.hasFocus && !_pendingSends.containsKey('body') && _body.text != note.body) {
+        _body.text = note.body;
+      }
     }
 
     final isList = note?.isList ?? _listWhileNew;
@@ -204,7 +227,9 @@ class _NotePageState extends ConsumerState<NotePage> {
 
     for (final it in items) {
       final c = _itemCtl(it);
-      if (!_itemNode(it.id).hasFocus && !_pendingSends.containsKey('item:${it.id}') && c.text != it.text) c.text = it.text;
+      if (!_itemNode(it.id).hasFocus && !_pendingSends.containsKey('item:${it.id}') && c.text != it.text) {
+        c.text = it.text;
+      }
     }
     if (_focusNext case final id? when items.any((i) => i.id == id)) {
       _focusNext = null;
@@ -215,7 +240,10 @@ class _NotePageState extends ConsumerState<NotePage> {
     final scheme = noteScheme(note?.color ?? '', base.brightness);
     final theme = scheme == null
         ? base
-        : themeFor(scheme.copyWith(surface: scheme.primaryContainer, onSurface: scheme.onPrimaryContainer), ref.watch(themeSpecProvider).value);
+        : themeFor(
+            scheme.copyWith(surface: scheme.primaryContainer, onSurface: scheme.onPrimaryContainer),
+            ref.watch(themeSpecProvider).value,
+          );
     final text = theme.textTheme;
 
     Widget itemRow(Item it) => Padding(
@@ -357,7 +385,8 @@ class _NotePageState extends ConsumerState<NotePage> {
                           title: Text('${checked.length} checked item${checked.length == 1 ? '' : 's'}'),
                           onTap: () => setState(() => _showChecked = !_showChecked),
                         ),
-                        if (_showChecked) for (final it in checked) itemRow(it),
+                        if (_showChecked)
+                          for (final it in checked) itemRow(it),
                       ],
                     ],
                   ],
@@ -440,9 +469,14 @@ class _Swatch extends StatelessWidget {
           decoration: BoxDecoration(
             color: hue ?? theme.colorScheme.surfaceContainerHighest,
             shape: BoxShape.circle,
-            border: Border.all(color: selected ? theme.colorScheme.onSurface : theme.colorScheme.outlineVariant, width: selected ? 2.5 : 1),
+            border: Border.all(
+              color: selected ? theme.colorScheme.onSurface : theme.colorScheme.outlineVariant,
+              width: selected ? 2.5 : 1,
+            ),
           ),
-          child: name.isEmpty ? Icon(Icons.format_color_reset_outlined, size: 18, color: theme.colorScheme.onSurfaceVariant) : null,
+          child: name.isEmpty
+              ? Icon(Icons.format_color_reset_outlined, size: 18, color: theme.colorScheme.onSurfaceVariant)
+              : null,
         ),
       ),
     );

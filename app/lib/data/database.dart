@@ -9,6 +9,7 @@ part 'database.g.dart';
 class Records extends Table {
   TextColumn get collection => text()();
   TextColumn get id => text()();
+
   /// The note a record belongs to (a note belongs to itself), for revokes.
   TextColumn get note => text().withDefault(const Constant(''))();
   TextColumn get data => text()();

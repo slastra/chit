@@ -89,28 +89,31 @@ final class SyncEngine {
         final done = Completer<void>();
         // asyncMap applies events strictly one after another: an async
         // listen callback would let two changes race into the replica.
-        _sub = api.stream(await replica.cursor()).asyncMap<void>((ev) async {
-          switch (ev) {
-            case OpenEvent():
-              backoff = const Duration(seconds: 1);
-              _set(SyncPhase.online);
-              unawaited(flush());
-            case ChangeEvent(:final seq, :final change):
-              await replica.applyChanges([change], seq);
-              if (change.hlc.isNotEmpty) clock.observe(change.hlc);
-            case CursorEvent(:final seq):
-              await replica.applyChanges(const [], seq);
-          }
-        }).listen(
-          null,
-          onError: (Object e) {
-            if (!done.isCompleted) done.completeError(e);
-          },
-          onDone: () {
-            if (!done.isCompleted) done.complete();
-          },
-          cancelOnError: true,
-        );
+        _sub = api
+            .stream(await replica.cursor())
+            .asyncMap<void>((ev) async {
+              switch (ev) {
+                case OpenEvent():
+                  backoff = const Duration(seconds: 1);
+                  _set(SyncPhase.online);
+                  unawaited(flush());
+                case ChangeEvent(:final seq, :final change):
+                  await replica.applyChanges([change], seq);
+                  if (change.hlc.isNotEmpty) clock.observe(change.hlc);
+                case CursorEvent(:final seq):
+                  await replica.applyChanges(const [], seq);
+              }
+            })
+            .listen(
+              null,
+              onError: (Object e) {
+                if (!done.isCompleted) done.completeError(e);
+              },
+              onDone: () {
+                if (!done.isCompleted) done.complete();
+              },
+              cancelOnError: true,
+            );
         await done.future;
         if (!_running) return;
         _set(SyncPhase.offline, 'disconnected');

@@ -57,6 +57,7 @@ class _HomePageState extends ConsumerState<HomePage> {
     final shown = _shown(lib);
     final pinned = _shelf == Shelf.notes ? shown.where((n) => lib.stateOf(n.id).pinned).toList() : <Note>[];
     final others = shown.where((n) => !pinned.contains(n)).toList();
+    // Material's expanded size class: the drawer docks beside the notes
     final wide = MediaQuery.sizeOf(context).width >= 840;
 
     Widget grid(List<Note> notes) => Masonry(
@@ -68,41 +69,72 @@ class _HomePageState extends ConsumerState<HomePage> {
     final theme = Theme.of(context);
     Widget section(String label) => Padding(
       padding: const EdgeInsets.fromLTRB(4, 20, 4, 8),
-      child: Text(label.toUpperCase(), style: theme.textTheme.labelMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant, letterSpacing: 1.2)),
+      child: Text(
+        label.toUpperCase(),
+        style: theme.textTheme.labelMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant, letterSpacing: 1.2),
+      ),
     );
 
     return Scaffold(
       key: _scaffold,
-      drawer: _Drawer(shelf: _shelf, onPick: (s) => setState(() => _shelf = s)),
+      drawer: wide ? null : _Drawer(shelf: _shelf, onPick: (s) => setState(() => _shelf = s)),
       body: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            SliverAppBar(
-              floating: true,
-              toolbarHeight: 72,
-              titleSpacing: 12,
-              automaticallyImplyLeading: false,
-              title: SearchBar(
-                hintText: _shelf == Shelf.notes ? 'Search notes' : 'Search ${_shelf.label.toLowerCase()}',
-                elevation: const WidgetStatePropertyAll(0),
-                leading: IconButton(icon: const Icon(Icons.menu), tooltip: 'Menu', onPressed: () => _scaffold.currentState?.openDrawer()),
-                trailing: const [_SyncMark()],
-                onChanged: (v) => setState(() => _query = v),
-              ),
-            ),
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 96),
-              sliver: SliverToBoxAdapter(
-                child: shown.isEmpty
-                    ? _Empty(shelf: _shelf, searching: _query.trim().isNotEmpty)
-                    : Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          if (pinned.isNotEmpty) ...[section('Pinned'), grid(pinned)],
-                          if (pinned.isNotEmpty && others.isNotEmpty) section('Others') else const SizedBox(height: 8),
-                          if (others.isNotEmpty) grid(others),
-                        ],
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (wide) _Drawer(shelf: _shelf, docked: true, onPick: (s) => setState(() => _shelf = s)),
+            Expanded(
+              child: CustomScrollView(
+                slivers: [
+                  SliverAppBar(
+                    floating: true,
+                    toolbarHeight: 72,
+                    titleSpacing: 12,
+                    automaticallyImplyLeading: false,
+                    centerTitle: true,
+                    title: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 720),
+                      child: SearchBar(
+                        hintText: _shelf == Shelf.notes ? 'Search notes' : 'Search ${_shelf.label.toLowerCase()}',
+                        elevation: const WidgetStatePropertyAll(0),
+                        leading: wide
+                            ? const Padding(padding: EdgeInsets.all(8), child: Icon(Icons.search))
+                            : IconButton(
+                                icon: const Icon(Icons.menu),
+                                tooltip: 'Menu',
+                                onPressed: () => _scaffold.currentState?.openDrawer(),
+                              ),
+                        trailing: const [_SyncMark()],
+                        onChanged: (v) => setState(() => _query = v),
                       ),
+                    ),
+                  ),
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 96),
+                    // centered and capped, so a very wide screen does not stretch
+                    // the grid edge to edge
+                    sliver: SliverToBoxAdapter(
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 1600),
+                          child: shown.isEmpty
+                              ? _Empty(shelf: _shelf, searching: _query.trim().isNotEmpty)
+                              : Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    if (pinned.isNotEmpty) ...[section('Pinned'), grid(pinned)],
+                                    if (pinned.isNotEmpty && others.isNotEmpty)
+                                      section('Others')
+                                    else
+                                      const SizedBox(height: 8),
+                                    if (others.isNotEmpty) grid(others),
+                                  ],
+                                ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -133,9 +165,12 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 }
 
+/// The shelves and the account. Docked beside the notes on a wide screen
+/// (a standard drawer), slid out from the menu button otherwise.
 class _Drawer extends ConsumerWidget {
-  const _Drawer({required this.shelf, required this.onPick});
+  const _Drawer({required this.shelf, required this.onPick, this.docked = false});
   final Shelf shelf;
+  final bool docked;
   final ValueChanged<Shelf> onPick;
 
   @override
@@ -145,7 +180,7 @@ class _Drawer extends ConsumerWidget {
       selectedIndex: shelf.index,
       onDestinationSelected: (i) {
         onPick(Shelf.values[i]);
-        Navigator.of(context).pop();
+        if (!docked) Navigator.of(context).pop();
       },
       children: [
         Padding(
@@ -184,12 +219,18 @@ class _SyncMark extends ConsumerWidget {
     final (icon, tip) = switch (status?.phase) {
       SyncPhase.online when pending > 0 => (Icons.cloud_upload_outlined, 'Sending $pending'),
       SyncPhase.online => (Icons.cloud_done_outlined, 'Up to date'),
-      SyncPhase.offline => (Icons.cloud_off_outlined, 'Offline: ${status!.error}${pending > 0 ? ' · $pending waiting' : ''}'),
+      SyncPhase.offline => (
+        Icons.cloud_off_outlined,
+        'Offline: ${status!.error}${pending > 0 ? ' · $pending waiting' : ''}',
+      ),
       _ => (Icons.cloud_sync_outlined, 'Connecting'),
     };
     return Tooltip(
       message: tip,
-      child: Padding(padding: const EdgeInsets.all(8), child: Icon(icon, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Icon(icon, color: Theme.of(context).colorScheme.onSurfaceVariant),
+      ),
     );
   }
 }
@@ -215,7 +256,10 @@ class _Empty extends StatelessWidget {
       child: Column(
         children: [
           DecoratedBox(
-            decoration: ShapeDecoration(color: scheme.primaryContainer, shape: MaterialShapeBorder(shape: MaterialShapes.cookie9Sided)),
+            decoration: ShapeDecoration(
+              color: scheme.primaryContainer,
+              shape: MaterialShapeBorder(shape: MaterialShapes.cookie9Sided),
+            ),
             child: SizedBox.square(
               dimension: 120,
               child: Icon(searching ? Icons.search_off : shelf.icon, size: 48, color: scheme.onPrimaryContainer),

@@ -15,9 +15,8 @@ final _rand = Random.secure();
 const _alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
 
 /// A random string of [n] characters from [a-z0-9].
-String randomId([int n = 15]) => String.fromCharCodes(
-  List.generate(n, (_) => _alphabet.codeUnitAt(_rand.nextInt(_alphabet.length))),
-);
+String randomId([int n = 15]) =>
+    String.fromCharCodes(List.generate(n, (_) => _alphabet.codeUnitAt(_rand.nextInt(_alphabet.length))));
 
 /// The local database, one for the app's life.
 final dbProvider = Provider<ChitDb>((ref) {

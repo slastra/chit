@@ -32,7 +32,8 @@ class NoteCard extends ConsumerWidget {
     final open = items.where((i) => !i.checked).toList();
     final done = items.length - open.length;
     final files = library.attachments[note.id] ?? const <Attachment>[];
-    final shared = (library.members[note.id]?.isNotEmpty ?? false) || note.owner != ref.watch(sessionProvider).value?.user.id;
+    final shared =
+        (library.members[note.id]?.isNotEmpty ?? false) || note.owner != ref.watch(sessionProvider).value?.user.id;
     final reminder = state.reminderDone ? '' : state.reminder;
 
     return Card.filled(
@@ -61,13 +62,20 @@ class NoteCard extends ConsumerWidget {
                   ],
                 ),
               if (!note.isList && note.body.isNotEmpty)
-                Text(note.body, style: text.bodyMedium?.copyWith(color: ink), maxLines: 10, overflow: TextOverflow.ellipsis),
+                Text(
+                  note.body,
+                  style: text.bodyMedium?.copyWith(color: ink),
+                  maxLines: 10,
+                  overflow: TextOverflow.ellipsis,
+                ),
               if (note.isList)
-                for (final it in open.take(_itemsShown))
-                  _ItemLine(item: it, ink: ink, onCheck: () => _check(ref, it)),
+                for (final it in open.take(_itemsShown)) _ItemLine(item: it, ink: ink, onCheck: () => _check(ref, it)),
               if (note.isList && (open.length > _itemsShown || done > 0))
                 Text(
-                  [if (open.length > _itemsShown) '${open.length - _itemsShown} more', if (done > 0) '$done checked'].join(' · '),
+                  [
+                    if (open.length > _itemsShown) '${open.length - _itemsShown} more',
+                    if (done > 0) '$done checked',
+                  ].join(' · '),
                   style: text.labelMedium?.copyWith(color: faint),
                 ),
               if (reminder.isNotEmpty || shared || files.isNotEmpty)
@@ -96,7 +104,9 @@ class NoteCard extends ConsumerWidget {
   static String _when(BuildContext context, String s) {
     final d = DateTime.tryParse(s.replaceFirst(' ', 'T'))?.toLocal();
     if (d == null) return '';
-    final day = DateUtils.isSameDay(d, DateTime.now()) ? 'Today' : MaterialLocalizations.of(context).formatShortMonthDay(d);
+    final day = DateUtils.isSameDay(d, DateTime.now())
+        ? 'Today'
+        : MaterialLocalizations.of(context).formatShortMonthDay(d);
     return '$day ${TimeOfDay.fromDateTime(d).format(context)}';
   }
 }
@@ -115,10 +125,18 @@ class _ItemLine extends StatelessWidget {
       InkResponse(
         onTap: onCheck,
         radius: 16,
-        child: Padding(padding: const EdgeInsets.only(right: 8, top: 1), child: Icon(Icons.check_box_outline_blank, size: 18, color: ink)),
+        child: Padding(
+          padding: const EdgeInsets.only(right: 8, top: 1),
+          child: Icon(Icons.check_box_outline_blank, size: 18, color: ink),
+        ),
       ),
       Expanded(
-        child: Text(item.text, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: ink), maxLines: 2, overflow: TextOverflow.ellipsis),
+        child: Text(
+          item.text,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: ink),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
       ),
     ],
   );

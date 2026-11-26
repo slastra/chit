@@ -11,9 +11,13 @@ const seed = Color(0xFF4F7CAC);
 ThemeData buildTheme(ColorScheme? dynamicScheme, Brightness brightness, [ThemeSpec? spec]) => spec != null
     ? themeFor(spec.scheme(seed), spec)
     : themeFor(
-  dynamicScheme?.harmonized(brightness) ??
-      ColorScheme.fromSeed(seedColor: seed, brightness: brightness, dynamicSchemeVariant: DynamicSchemeVariant.expressive),
-);
+        dynamicScheme?.harmonized(brightness) ??
+            ColorScheme.fromSeed(
+              seedColor: seed,
+              brightness: brightness,
+              dynamicSchemeVariant: DynamicSchemeVariant.expressive,
+            ),
+      );
 
 /// The app's theme around any scheme (a note's page uses its color's). Built
 /// whole, not copied: a copied theme keeps its old text colors. [spec] adds
@@ -30,9 +34,7 @@ ThemeData themeFor(ColorScheme scheme, [ThemeSpec? spec]) {
     iconButtonTheme: const IconButtonThemeData(variant: expressive),
     elevatedButtonTheme: const ElevatedButtonThemeData(variant: expressive),
     pageTransitionsTheme: PageTransitionsTheme(
-      builders: {
-        for (final p in TargetPlatform.values) p: const FadeForwardsPageTransitionsBuilder(),
-      },
+      builders: {for (final p in TargetPlatform.values) p: const FadeForwardsPageTransitionsBuilder()},
     ),
     inputDecorationTheme: const InputDecorationTheme(border: InputBorder.none),
     cardTheme: CardThemeData(margin: EdgeInsets.zero, clipBehavior: Clip.antiAlias, shape: corners),

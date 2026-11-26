@@ -17,9 +17,7 @@ abstract final class Collections {
 typedef Clocks = Map<String, String>;
 typedef Json = Map<String, Object?>;
 
-Clocks _clocks(Object? v) => {
-  for (final MapEntry(:key, :value) in ((v as Map?) ?? const {}).entries) '$key': '$value',
-};
+Clocks _clocks(Object? v) => {for (final MapEntry(:key, :value) in ((v as Map?) ?? const {}).entries) '$key': '$value'};
 
 /// One field of one record. For note_state, [id] is the note's id.
 final class Op {

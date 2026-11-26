@@ -3,15 +3,12 @@
 part of 'database.dart';
 
 // ignore_for_file: type=lint
-class $RecordsTable extends Records
-    with TableInfo<$RecordsTable, StoredRecord> {
+class $RecordsTable extends Records with TableInfo<$RecordsTable, StoredRecord> {
   @override
   final GeneratedDatabase attachedDatabase;
   final String? _alias;
   $RecordsTable(this.attachedDatabase, [this._alias]);
-  static const VerificationMeta _collectionMeta = const VerificationMeta(
-    'collection',
-  );
+  static const VerificationMeta _collectionMeta = const VerificationMeta('collection');
   @override
   late final GeneratedColumn<String> collection = GeneratedColumn<String>(
     'collection',
@@ -56,17 +53,11 @@ class $RecordsTable extends Records
   String get actualTableName => $name;
   static const String $name = 'records';
   @override
-  VerificationContext validateIntegrity(
-    Insertable<StoredRecord> instance, {
-    bool isInserting = false,
-  }) {
+  VerificationContext validateIntegrity(Insertable<StoredRecord> instance, {bool isInserting = false}) {
     final context = VerificationContext();
     final data = instance.toColumns(true);
     if (data.containsKey('collection')) {
-      context.handle(
-        _collectionMeta,
-        collection.isAcceptableOrUnknown(data['collection']!, _collectionMeta),
-      );
+      context.handle(_collectionMeta, collection.isAcceptableOrUnknown(data['collection']!, _collectionMeta));
     } else if (isInserting) {
       context.missing(_collectionMeta);
     }
@@ -76,16 +67,10 @@ class $RecordsTable extends Records
       context.missing(_idMeta);
     }
     if (data.containsKey('note')) {
-      context.handle(
-        _noteMeta,
-        note.isAcceptableOrUnknown(data['note']!, _noteMeta),
-      );
+      context.handle(_noteMeta, note.isAcceptableOrUnknown(data['note']!, _noteMeta));
     }
     if (data.containsKey('data')) {
-      context.handle(
-        _dataMeta,
-        this.data.isAcceptableOrUnknown(data['data']!, _dataMeta),
-      );
+      context.handle(_dataMeta, this.data.isAcceptableOrUnknown(data['data']!, _dataMeta));
     } else if (isInserting) {
       context.missing(_dataMeta);
     }
@@ -98,22 +83,10 @@ class $RecordsTable extends Records
   StoredRecord map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
     return StoredRecord(
-      collection: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}collection'],
-      )!,
-      id: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}id'],
-      )!,
-      note: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}note'],
-      )!,
-      data: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}data'],
-      )!,
+      collection: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}collection'])!,
+      id: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}id'])!,
+      note: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}note'])!,
+      data: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}data'])!,
     );
   }
 
@@ -130,12 +103,7 @@ class StoredRecord extends DataClass implements Insertable<StoredRecord> {
   /// The note a record belongs to (a note belongs to itself), for revokes.
   final String note;
   final String data;
-  const StoredRecord({
-    required this.collection,
-    required this.id,
-    required this.note,
-    required this.data,
-  });
+  const StoredRecord({required this.collection, required this.id, required this.note, required this.data});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -147,18 +115,10 @@ class StoredRecord extends DataClass implements Insertable<StoredRecord> {
   }
 
   RecordsCompanion toCompanion(bool nullToAbsent) {
-    return RecordsCompanion(
-      collection: Value(collection),
-      id: Value(id),
-      note: Value(note),
-      data: Value(data),
-    );
+    return RecordsCompanion(collection: Value(collection), id: Value(id), note: Value(note), data: Value(data));
   }
 
-  factory StoredRecord.fromJson(
-    Map<String, dynamic> json, {
-    ValueSerializer? serializer,
-  }) {
+  factory StoredRecord.fromJson(Map<String, dynamic> json, {ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return StoredRecord(
       collection: serializer.fromJson<String>(json['collection']),
@@ -178,12 +138,7 @@ class StoredRecord extends DataClass implements Insertable<StoredRecord> {
     };
   }
 
-  StoredRecord copyWith({
-    String? collection,
-    String? id,
-    String? note,
-    String? data,
-  }) => StoredRecord(
+  StoredRecord copyWith({String? collection, String? id, String? note, String? data}) => StoredRecord(
     collection: collection ?? this.collection,
     id: id ?? this.id,
     note: note ?? this.note,
@@ -191,9 +146,7 @@ class StoredRecord extends DataClass implements Insertable<StoredRecord> {
   );
   StoredRecord copyWithCompanion(RecordsCompanion data) {
     return StoredRecord(
-      collection: data.collection.present
-          ? data.collection.value
-          : this.collection,
+      collection: data.collection.present ? data.collection.value : this.collection,
       id: data.id.present ? data.id.value : this.id,
       note: data.note.present ? data.note.value : this.note,
       data: data.data.present ? data.data.value : this.data,
@@ -325,9 +278,7 @@ class $OutboxTable extends Outbox with TableInfo<$OutboxTable, OutboxData> {
     hasAutoIncrement: true,
     type: DriftSqlType.int,
     requiredDuringInsert: false,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'PRIMARY KEY AUTOINCREMENT',
-    ),
+    defaultConstraints: GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'),
   );
   static const VerificationMeta _opMeta = const VerificationMeta('op');
   @override
@@ -338,9 +289,7 @@ class $OutboxTable extends Outbox with TableInfo<$OutboxTable, OutboxData> {
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
-  static const VerificationMeta _createdMeta = const VerificationMeta(
-    'created',
-  );
+  static const VerificationMeta _createdMeta = const VerificationMeta('created');
   @override
   late final GeneratedColumn<String> created = GeneratedColumn<String>(
     'created',
@@ -357,17 +306,11 @@ class $OutboxTable extends Outbox with TableInfo<$OutboxTable, OutboxData> {
   String get actualTableName => $name;
   static const String $name = 'outbox';
   @override
-  VerificationContext validateIntegrity(
-    Insertable<OutboxData> instance, {
-    bool isInserting = false,
-  }) {
+  VerificationContext validateIntegrity(Insertable<OutboxData> instance, {bool isInserting = false}) {
     final context = VerificationContext();
     final data = instance.toColumns(true);
     if (data.containsKey('seq')) {
-      context.handle(
-        _seqMeta,
-        seq.isAcceptableOrUnknown(data['seq']!, _seqMeta),
-      );
+      context.handle(_seqMeta, seq.isAcceptableOrUnknown(data['seq']!, _seqMeta));
     }
     if (data.containsKey('op')) {
       context.handle(_opMeta, op.isAcceptableOrUnknown(data['op']!, _opMeta));
@@ -375,10 +318,7 @@ class $OutboxTable extends Outbox with TableInfo<$OutboxTable, OutboxData> {
       context.missing(_opMeta);
     }
     if (data.containsKey('created')) {
-      context.handle(
-        _createdMeta,
-        created.isAcceptableOrUnknown(data['created']!, _createdMeta),
-      );
+      context.handle(_createdMeta, created.isAcceptableOrUnknown(data['created']!, _createdMeta));
     } else if (isInserting) {
       context.missing(_createdMeta);
     }
@@ -391,18 +331,9 @@ class $OutboxTable extends Outbox with TableInfo<$OutboxTable, OutboxData> {
   OutboxData map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
     return OutboxData(
-      seq: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}seq'],
-      )!,
-      op: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}op'],
-      )!,
-      created: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}created'],
-      )!,
+      seq: attachedDatabase.typeMapping.read(DriftSqlType.int, data['${effectivePrefix}seq'])!,
+      op: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}op'])!,
+      created: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}created'])!,
     );
   }
 
@@ -416,11 +347,7 @@ class OutboxData extends DataClass implements Insertable<OutboxData> {
   final int seq;
   final String op;
   final String created;
-  const OutboxData({
-    required this.seq,
-    required this.op,
-    required this.created,
-  });
+  const OutboxData({required this.seq, required this.op, required this.created});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -431,17 +358,10 @@ class OutboxData extends DataClass implements Insertable<OutboxData> {
   }
 
   OutboxCompanion toCompanion(bool nullToAbsent) {
-    return OutboxCompanion(
-      seq: Value(seq),
-      op: Value(op),
-      created: Value(created),
-    );
+    return OutboxCompanion(seq: Value(seq), op: Value(op), created: Value(created));
   }
 
-  factory OutboxData.fromJson(
-    Map<String, dynamic> json, {
-    ValueSerializer? serializer,
-  }) {
+  factory OutboxData.fromJson(Map<String, dynamic> json, {ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return OutboxData(
       seq: serializer.fromJson<int>(json['seq']),
@@ -459,11 +379,8 @@ class OutboxData extends DataClass implements Insertable<OutboxData> {
     };
   }
 
-  OutboxData copyWith({int? seq, String? op, String? created}) => OutboxData(
-    seq: seq ?? this.seq,
-    op: op ?? this.op,
-    created: created ?? this.created,
-  );
+  OutboxData copyWith({int? seq, String? op, String? created}) =>
+      OutboxData(seq: seq ?? this.seq, op: op ?? this.op, created: created ?? this.created);
   OutboxData copyWithCompanion(OutboxCompanion data) {
     return OutboxData(
       seq: data.seq.present ? data.seq.value : this.seq,
@@ -487,10 +404,7 @@ class OutboxData extends DataClass implements Insertable<OutboxData> {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is OutboxData &&
-          other.seq == this.seq &&
-          other.op == this.op &&
-          other.created == this.created);
+      (other is OutboxData && other.seq == this.seq && other.op == this.op && other.created == this.created);
 }
 
 class OutboxCompanion extends UpdateCompanion<OutboxData> {
@@ -502,17 +416,10 @@ class OutboxCompanion extends UpdateCompanion<OutboxData> {
     this.op = const Value.absent(),
     this.created = const Value.absent(),
   });
-  OutboxCompanion.insert({
-    this.seq = const Value.absent(),
-    required String op,
-    required String created,
-  }) : op = Value(op),
-       created = Value(created);
-  static Insertable<OutboxData> custom({
-    Expression<int>? seq,
-    Expression<String>? op,
-    Expression<String>? created,
-  }) {
+  OutboxCompanion.insert({this.seq = const Value.absent(), required String op, required String created})
+    : op = Value(op),
+      created = Value(created);
+  static Insertable<OutboxData> custom({Expression<int>? seq, Expression<String>? op, Expression<String>? created}) {
     return RawValuesInsertable({
       if (seq != null) 'seq': seq,
       if (op != null) 'op': op,
@@ -520,16 +427,8 @@ class OutboxCompanion extends UpdateCompanion<OutboxData> {
     });
   }
 
-  OutboxCompanion copyWith({
-    Value<int>? seq,
-    Value<String>? op,
-    Value<String>? created,
-  }) {
-    return OutboxCompanion(
-      seq: seq ?? this.seq,
-      op: op ?? this.op,
-      created: created ?? this.created,
-    );
+  OutboxCompanion copyWith({Value<int>? seq, Value<String>? op, Value<String>? created}) {
+    return OutboxCompanion(seq: seq ?? this.seq, op: op ?? this.op, created: created ?? this.created);
   }
 
   @override
@@ -589,25 +488,16 @@ class $MetaTable extends Meta with TableInfo<$MetaTable, MetaData> {
   String get actualTableName => $name;
   static const String $name = 'meta';
   @override
-  VerificationContext validateIntegrity(
-    Insertable<MetaData> instance, {
-    bool isInserting = false,
-  }) {
+  VerificationContext validateIntegrity(Insertable<MetaData> instance, {bool isInserting = false}) {
     final context = VerificationContext();
     final data = instance.toColumns(true);
     if (data.containsKey('key')) {
-      context.handle(
-        _keyMeta,
-        key.isAcceptableOrUnknown(data['key']!, _keyMeta),
-      );
+      context.handle(_keyMeta, key.isAcceptableOrUnknown(data['key']!, _keyMeta));
     } else if (isInserting) {
       context.missing(_keyMeta);
     }
     if (data.containsKey('value')) {
-      context.handle(
-        _valueMeta,
-        value.isAcceptableOrUnknown(data['value']!, _valueMeta),
-      );
+      context.handle(_valueMeta, value.isAcceptableOrUnknown(data['value']!, _valueMeta));
     } else if (isInserting) {
       context.missing(_valueMeta);
     }
@@ -620,14 +510,8 @@ class $MetaTable extends Meta with TableInfo<$MetaTable, MetaData> {
   MetaData map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
     return MetaData(
-      key: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}key'],
-      )!,
-      value: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}value'],
-      )!,
+      key: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}key'])!,
+      value: attachedDatabase.typeMapping.read(DriftSqlType.string, data['${effectivePrefix}value'])!,
     );
   }
 
@@ -653,27 +537,17 @@ class MetaData extends DataClass implements Insertable<MetaData> {
     return MetaCompanion(key: Value(key), value: Value(value));
   }
 
-  factory MetaData.fromJson(
-    Map<String, dynamic> json, {
-    ValueSerializer? serializer,
-  }) {
+  factory MetaData.fromJson(Map<String, dynamic> json, {ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
-    return MetaData(
-      key: serializer.fromJson<String>(json['key']),
-      value: serializer.fromJson<String>(json['value']),
-    );
+    return MetaData(key: serializer.fromJson<String>(json['key']), value: serializer.fromJson<String>(json['value']));
   }
   @override
   Map<String, dynamic> toJson({ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
-    return <String, dynamic>{
-      'key': serializer.toJson<String>(key),
-      'value': serializer.toJson<String>(value),
-    };
+    return <String, dynamic>{'key': serializer.toJson<String>(key), 'value': serializer.toJson<String>(value)};
   }
 
-  MetaData copyWith({String? key, String? value}) =>
-      MetaData(key: key ?? this.key, value: value ?? this.value);
+  MetaData copyWith({String? key, String? value}) => MetaData(key: key ?? this.key, value: value ?? this.value);
   MetaData copyWithCompanion(MetaCompanion data) {
     return MetaData(
       key: data.key.present ? data.key.value : this.key,
@@ -694,8 +568,7 @@ class MetaData extends DataClass implements Insertable<MetaData> {
   int get hashCode => Object.hash(key, value);
   @override
   bool operator ==(Object other) =>
-      identical(this, other) ||
-      (other is MetaData && other.key == this.key && other.value == this.value);
+      identical(this, other) || (other is MetaData && other.key == this.key && other.value == this.value);
 }
 
 class MetaCompanion extends UpdateCompanion<MetaData> {
@@ -707,17 +580,10 @@ class MetaCompanion extends UpdateCompanion<MetaData> {
     this.value = const Value.absent(),
     this.rowid = const Value.absent(),
   });
-  MetaCompanion.insert({
-    required String key,
-    required String value,
-    this.rowid = const Value.absent(),
-  }) : key = Value(key),
-       value = Value(value);
-  static Insertable<MetaData> custom({
-    Expression<String>? key,
-    Expression<String>? value,
-    Expression<int>? rowid,
-  }) {
+  MetaCompanion.insert({required String key, required String value, this.rowid = const Value.absent()})
+    : key = Value(key),
+      value = Value(value);
+  static Insertable<MetaData> custom({Expression<String>? key, Expression<String>? value, Expression<int>? rowid}) {
     return RawValuesInsertable({
       if (key != null) 'key': key,
       if (value != null) 'value': value,
@@ -725,16 +591,8 @@ class MetaCompanion extends UpdateCompanion<MetaData> {
     });
   }
 
-  MetaCompanion copyWith({
-    Value<String>? key,
-    Value<String>? value,
-    Value<int>? rowid,
-  }) {
-    return MetaCompanion(
-      key: key ?? this.key,
-      value: value ?? this.value,
-      rowid: rowid ?? this.rowid,
-    );
+  MetaCompanion copyWith({Value<String>? key, Value<String>? value, Value<int>? rowid}) {
+    return MetaCompanion(key: key ?? this.key, value: value ?? this.value, rowid: rowid ?? this.rowid);
   }
 
   @override
@@ -770,8 +628,7 @@ abstract class _$ChitDb extends GeneratedDatabase {
   late final $OutboxTable outbox = $OutboxTable(this);
   late final $MetaTable meta = $MetaTable(this);
   @override
-  Iterable<TableInfo<Table, Object?>> get allTables =>
-      allSchemaEntities.whereType<TableInfo<Table, Object?>>();
+  Iterable<TableInfo<Table, Object?>> get allTables => allSchemaEntities.whereType<TableInfo<Table, Object?>>();
   @override
   List<DatabaseSchemaEntity> get allSchemaEntities => [records, outbox, meta];
 }
@@ -799,25 +656,14 @@ class $$RecordsTableFilterComposer extends Composer<_$ChitDb, $RecordsTable> {
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  ColumnFilters<String> get collection => $composableBuilder(
-    column: $table.collection,
-    builder: (column) => ColumnFilters(column),
-  );
+  ColumnFilters<String> get collection =>
+      $composableBuilder(column: $table.collection, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<String> get id => $composableBuilder(
-    column: $table.id,
-    builder: (column) => ColumnFilters(column),
-  );
+  ColumnFilters<String> get id => $composableBuilder(column: $table.id, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<String> get note => $composableBuilder(
-    column: $table.note,
-    builder: (column) => ColumnFilters(column),
-  );
+  ColumnFilters<String> get note => $composableBuilder(column: $table.note, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<String> get data => $composableBuilder(
-    column: $table.data,
-    builder: (column) => ColumnFilters(column),
-  );
+  ColumnFilters<String> get data => $composableBuilder(column: $table.data, builder: (column) => ColumnFilters(column));
 }
 
 class $$RecordsTableOrderingComposer extends Composer<_$ChitDb, $RecordsTable> {
@@ -828,29 +674,19 @@ class $$RecordsTableOrderingComposer extends Composer<_$ChitDb, $RecordsTable> {
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  ColumnOrderings<String> get collection => $composableBuilder(
-    column: $table.collection,
-    builder: (column) => ColumnOrderings(column),
-  );
+  ColumnOrderings<String> get collection =>
+      $composableBuilder(column: $table.collection, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<String> get id => $composableBuilder(
-    column: $table.id,
-    builder: (column) => ColumnOrderings(column),
-  );
+  ColumnOrderings<String> get id => $composableBuilder(column: $table.id, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<String> get note => $composableBuilder(
-    column: $table.note,
-    builder: (column) => ColumnOrderings(column),
-  );
+  ColumnOrderings<String> get note =>
+      $composableBuilder(column: $table.note, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<String> get data => $composableBuilder(
-    column: $table.data,
-    builder: (column) => ColumnOrderings(column),
-  );
+  ColumnOrderings<String> get data =>
+      $composableBuilder(column: $table.data, builder: (column) => ColumnOrderings(column));
 }
 
-class $$RecordsTableAnnotationComposer
-    extends Composer<_$ChitDb, $RecordsTable> {
+class $$RecordsTableAnnotationComposer extends Composer<_$ChitDb, $RecordsTable> {
   $$RecordsTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -858,19 +694,13 @@ class $$RecordsTableAnnotationComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  GeneratedColumn<String> get collection => $composableBuilder(
-    column: $table.collection,
-    builder: (column) => column,
-  );
+  GeneratedColumn<String> get collection => $composableBuilder(column: $table.collection, builder: (column) => column);
 
-  GeneratedColumn<String> get id =>
-      $composableBuilder(column: $table.id, builder: (column) => column);
+  GeneratedColumn<String> get id => $composableBuilder(column: $table.id, builder: (column) => column);
 
-  GeneratedColumn<String> get note =>
-      $composableBuilder(column: $table.note, builder: (column) => column);
+  GeneratedColumn<String> get note => $composableBuilder(column: $table.note, builder: (column) => column);
 
-  GeneratedColumn<String> get data =>
-      $composableBuilder(column: $table.data, builder: (column) => column);
+  GeneratedColumn<String> get data => $composableBuilder(column: $table.data, builder: (column) => column);
 }
 
 class $$RecordsTableTableManager
@@ -893,49 +723,28 @@ class $$RecordsTableTableManager
         TableManagerState(
           db: db,
           table: table,
-          createFilteringComposer: () =>
-              $$RecordsTableFilterComposer($db: db, $table: table),
-          createOrderingComposer: () =>
-              $$RecordsTableOrderingComposer($db: db, $table: table),
-          createComputedFieldComposer: () =>
-              $$RecordsTableAnnotationComposer($db: db, $table: table),
-          updateCompanionCallback:
-              ({
-                Value<String> collection = const Value.absent(),
-                Value<String> id = const Value.absent(),
-                Value<String> note = const Value.absent(),
-                Value<String> data = const Value.absent(),
-                Value<int> rowid = const Value.absent(),
-              }) => RecordsCompanion(
-                collection: collection,
-                id: id,
-                note: note,
-                data: data,
-                rowid: rowid,
-              ),
-          createCompanionCallback:
-              ({
-                required String collection,
-                required String id,
-                Value<String> note = const Value.absent(),
-                required String data,
-                Value<int> rowid = const Value.absent(),
-              }) => RecordsCompanion.insert(
-                collection: collection,
-                id: id,
-                note: note,
-                data: data,
-                rowid: rowid,
-              ),
+          createFilteringComposer: () => $$RecordsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () => $$RecordsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () => $$RecordsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> collection = const Value.absent(),
+            Value<String> id = const Value.absent(),
+            Value<String> note = const Value.absent(),
+            Value<String> data = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) => RecordsCompanion(collection: collection, id: id, note: note, data: data, rowid: rowid),
+          createCompanionCallback: ({
+            required String collection,
+            required String id,
+            Value<String> note = const Value.absent(),
+            required String data,
+            Value<int> rowid = const Value.absent(),
+          }) => RecordsCompanion.insert(collection: collection, id: id, note: note, data: data, rowid: rowid),
           withReferenceMapper: (p0) => p0
               .map(
                 (e) => (
                   e.readTable<$RecordsTable, StoredRecord>(table),
-                  BaseReferences<_$ChitDb, $RecordsTable, StoredRecord>(
-                    db,
-                    table,
-                    e,
-                  ),
+                  BaseReferences<_$ChitDb, $RecordsTable, StoredRecord>(db, table, e),
                 ),
               )
               .toList(),
@@ -977,20 +786,12 @@ class $$OutboxTableFilterComposer extends Composer<_$ChitDb, $OutboxTable> {
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  ColumnFilters<int> get seq => $composableBuilder(
-    column: $table.seq,
-    builder: (column) => ColumnFilters(column),
-  );
+  ColumnFilters<int> get seq => $composableBuilder(column: $table.seq, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<String> get op => $composableBuilder(
-    column: $table.op,
-    builder: (column) => ColumnFilters(column),
-  );
+  ColumnFilters<String> get op => $composableBuilder(column: $table.op, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<String> get created => $composableBuilder(
-    column: $table.created,
-    builder: (column) => ColumnFilters(column),
-  );
+  ColumnFilters<String> get created =>
+      $composableBuilder(column: $table.created, builder: (column) => ColumnFilters(column));
 }
 
 class $$OutboxTableOrderingComposer extends Composer<_$ChitDb, $OutboxTable> {
@@ -1001,20 +802,12 @@ class $$OutboxTableOrderingComposer extends Composer<_$ChitDb, $OutboxTable> {
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  ColumnOrderings<int> get seq => $composableBuilder(
-    column: $table.seq,
-    builder: (column) => ColumnOrderings(column),
-  );
+  ColumnOrderings<int> get seq => $composableBuilder(column: $table.seq, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<String> get op => $composableBuilder(
-    column: $table.op,
-    builder: (column) => ColumnOrderings(column),
-  );
+  ColumnOrderings<String> get op => $composableBuilder(column: $table.op, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<String> get created => $composableBuilder(
-    column: $table.created,
-    builder: (column) => ColumnOrderings(column),
-  );
+  ColumnOrderings<String> get created =>
+      $composableBuilder(column: $table.created, builder: (column) => ColumnOrderings(column));
 }
 
 class $$OutboxTableAnnotationComposer extends Composer<_$ChitDb, $OutboxTable> {
@@ -1025,14 +818,11 @@ class $$OutboxTableAnnotationComposer extends Composer<_$ChitDb, $OutboxTable> {
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  GeneratedColumn<int> get seq =>
-      $composableBuilder(column: $table.seq, builder: (column) => column);
+  GeneratedColumn<int> get seq => $composableBuilder(column: $table.seq, builder: (column) => column);
 
-  GeneratedColumn<String> get op =>
-      $composableBuilder(column: $table.op, builder: (column) => column);
+  GeneratedColumn<String> get op => $composableBuilder(column: $table.op, builder: (column) => column);
 
-  GeneratedColumn<String> get created =>
-      $composableBuilder(column: $table.created, builder: (column) => column);
+  GeneratedColumn<String> get created => $composableBuilder(column: $table.created, builder: (column) => column);
 }
 
 class $$OutboxTableTableManager
@@ -1055,12 +845,9 @@ class $$OutboxTableTableManager
         TableManagerState(
           db: db,
           table: table,
-          createFilteringComposer: () =>
-              $$OutboxTableFilterComposer($db: db, $table: table),
-          createOrderingComposer: () =>
-              $$OutboxTableOrderingComposer($db: db, $table: table),
-          createComputedFieldComposer: () =>
-              $$OutboxTableAnnotationComposer($db: db, $table: table),
+          createFilteringComposer: () => $$OutboxTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () => $$OutboxTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () => $$OutboxTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
             Value<int> seq = const Value.absent(),
             Value<String> op = const Value.absent(),
@@ -1075,11 +862,7 @@ class $$OutboxTableTableManager
               .map(
                 (e) => (
                   e.readTable<$OutboxTable, OutboxData>(table),
-                  BaseReferences<_$ChitDb, $OutboxTable, OutboxData>(
-                    db,
-                    table,
-                    e,
-                  ),
+                  BaseReferences<_$ChitDb, $OutboxTable, OutboxData>(db, table, e),
                 ),
               )
               .toList(),
@@ -1121,15 +904,10 @@ class $$MetaTableFilterComposer extends Composer<_$ChitDb, $MetaTable> {
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  ColumnFilters<String> get key => $composableBuilder(
-    column: $table.key,
-    builder: (column) => ColumnFilters(column),
-  );
+  ColumnFilters<String> get key => $composableBuilder(column: $table.key, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<String> get value => $composableBuilder(
-    column: $table.value,
-    builder: (column) => ColumnFilters(column),
-  );
+  ColumnFilters<String> get value =>
+      $composableBuilder(column: $table.value, builder: (column) => ColumnFilters(column));
 }
 
 class $$MetaTableOrderingComposer extends Composer<_$ChitDb, $MetaTable> {
@@ -1140,15 +918,11 @@ class $$MetaTableOrderingComposer extends Composer<_$ChitDb, $MetaTable> {
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  ColumnOrderings<String> get key => $composableBuilder(
-    column: $table.key,
-    builder: (column) => ColumnOrderings(column),
-  );
+  ColumnOrderings<String> get key =>
+      $composableBuilder(column: $table.key, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<String> get value => $composableBuilder(
-    column: $table.value,
-    builder: (column) => ColumnOrderings(column),
-  );
+  ColumnOrderings<String> get value =>
+      $composableBuilder(column: $table.value, builder: (column) => ColumnOrderings(column));
 }
 
 class $$MetaTableAnnotationComposer extends Composer<_$ChitDb, $MetaTable> {
@@ -1159,11 +933,9 @@ class $$MetaTableAnnotationComposer extends Composer<_$ChitDb, $MetaTable> {
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  GeneratedColumn<String> get key =>
-      $composableBuilder(column: $table.key, builder: (column) => column);
+  GeneratedColumn<String> get key => $composableBuilder(column: $table.key, builder: (column) => column);
 
-  GeneratedColumn<String> get value =>
-      $composableBuilder(column: $table.value, builder: (column) => column);
+  GeneratedColumn<String> get value => $composableBuilder(column: $table.value, builder: (column) => column);
 }
 
 class $$MetaTableTableManager
@@ -1186,12 +958,9 @@ class $$MetaTableTableManager
         TableManagerState(
           db: db,
           table: table,
-          createFilteringComposer: () =>
-              $$MetaTableFilterComposer($db: db, $table: table),
-          createOrderingComposer: () =>
-              $$MetaTableOrderingComposer($db: db, $table: table),
-          createComputedFieldComposer: () =>
-              $$MetaTableAnnotationComposer($db: db, $table: table),
+          createFilteringComposer: () => $$MetaTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () => $$MetaTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () => $$MetaTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
             Value<String> key = const Value.absent(),
             Value<String> value = const Value.absent(),
@@ -1233,9 +1002,7 @@ typedef $$MetaTableProcessedTableManager =
 class $ChitDbManager {
   final _$ChitDb _db;
   $ChitDbManager(this._db);
-  $$RecordsTableTableManager get records =>
-      $$RecordsTableTableManager(_db, _db.records);
-  $$OutboxTableTableManager get outbox =>
-      $$OutboxTableTableManager(_db, _db.outbox);
+  $$RecordsTableTableManager get records => $$RecordsTableTableManager(_db, _db.records);
+  $$OutboxTableTableManager get outbox => $$OutboxTableTableManager(_db, _db.outbox);
   $$MetaTableTableManager get meta => $$MetaTableTableManager(_db, _db.meta);
 }
