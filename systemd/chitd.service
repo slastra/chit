@@ -1,0 +1,16 @@
+# Install (from the repo root):
+#   go build -o ~/.local/bin/chitd ./cmd/chitd
+#   ln -s $PWD/systemd/chitd.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now chitd
+# Sign in first: chit login <server-url>. After a rebuild: systemctl --user restart chitd
+[Unit]
+Description=chitd: chit notes replica, sync and desktop toasts
+After=graphical-session.target
+
+[Service]
+ExecStart=%h/.local/bin/chitd serve
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,241 @@
+package daemon
+
+import (
+	"context"
+	"encoding/json"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/slastra/chit/internal/config"
+	"github.com/slastra/chit/internal/protocol"
+	"github.com/slastra/chit/internal/replica"
+	"github.com/slastra/chit/internal/sock"
+)
+
+type fakeNotifier struct {
+	mu     sync.Mutex
+	shown  []Toast
+	acts   []func(string)
+	closed []uint32
+}
+
+func (f *fakeNotifier) Show(_ context.Context, t Toast, on func(string)) (uint32, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.shown = append(f.shown, t)
+	f.acts = append(f.acts, on)
+	return uint32(len(f.shown)), nil
+}
+
+func (f *fakeNotifier) Close(id uint32) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.closed = append(f.closed, id)
+	return nil
+}
+
+const (
+	me       = "shaun0000000001"
+	angelica = "angelica0000001"
+	listID   = "groceries000001"
+	itemID   = "milk00000000001"
+)
+
+func raw(v any) json.RawMessage { b, _ := json.Marshal(v); return b }
+
+func newDaemon(t *testing.T, n Notifier) *Daemon {
+	t.Helper()
+	rep, err := replica.Open(filepath.Join(t.TempDir(), "replica.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { rep.Close() })
+	if err := rep.SetMeta(replica.MetaUser, me); err != nil {
+		t.Fatal(err)
+	}
+	err = rep.ReplaceAll(&protocol.Snapshot{
+		Seq: 5,
+		Notes: []protocol.Note{{ID: listID, Owner: me, Kind: "list", Title: "Groceries",
+			Clocks: protocol.Clocks{"title": "1795651200000-0000-srv"}}},
+		Items: []protocol.Item{{ID: itemID, Note: listID, Text: "milk", Order: "1",
+			Clocks: protocol.Clocks{"text": "1795651200000-0000-srv"}}},
+		Members: []protocol.Member{{ID: "member000000001", Note: listID, User: angelica, Role: "editor"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{Server: "http://127.0.0.1:1", User: protocol.Person{ID: me, Name: "Shaun"}}
+	d, err := New(Options{
+		Replica: rep, Socket: filepath.Join(t.TempDir(), "chit.sock"), Notifier: n,
+		LoadConfig: func() (*config.Config, error) { return cfg, nil },
+		Logf:       t.Logf,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.cfg = cfg
+	d.notes.names[angelica] = "Angelica"
+	return d
+}
+
+func TestActivityToastsGroupPerPersonAndNote(t *testing.T) {
+	f := &fakeNotifier{}
+	d := newDaemon(t, f)
+	d.notes.window = time.Hour // only flushAll shows them
+	set := func(by, field string, v any) protocol.Change {
+		return protocol.Change{Kind: protocol.KindSet, Collection: protocol.Items, Record: itemID, Field: field, Value: raw(v), HLC: "1795651300000-0000-pix", By: by}
+	}
+	d.notes.saw(set(angelica, "checked", true), false)
+	d.notes.saw(protocol.Change{Kind: protocol.KindRecord, Collection: protocol.Items, Record: "eggs00000000001",
+		Value: raw(protocol.Item{ID: "eggs00000000001", Note: listID, Text: "eggs"}), By: angelica}, false)
+	d.notes.saw(set(me, "checked", false), false)      // mine from another device: no toast
+	d.notes.saw(set(angelica, "checked", false), true) // local: no toast
+	d.notes.flushAll()
+
+	if len(f.shown) != 1 {
+		t.Fatalf("toasts = %+v, want 1", f.shown)
+	}
+	got := f.shown[0]
+	if got.Summary != "Groceries" || !strings.Contains(got.Body, `Angelica checked "milk"`) || !strings.Contains(got.Body, `Angelica added "eggs"`) {
+		t.Fatalf("toast = %+v", got)
+	}
+}
+
+func TestActivityToastsCanBeTurnedOff(t *testing.T) {
+	f := &fakeNotifier{}
+	d := newDaemon(t, f)
+	off := false
+	d.cfg.ActivityToasts = &off
+	d.notes.saw(protocol.Change{Kind: protocol.KindSet, Collection: protocol.Items, Record: itemID, Field: "checked", Value: raw(true), HLC: "1795651300000-0000-pix", By: angelica}, false)
+	d.notes.flushAll()
+	if len(f.shown) != 0 {
+		t.Fatalf("toast shown with activity_toasts off: %+v", f.shown)
+	}
+}
+
+func TestQuietHoldsActivity(t *testing.T) {
+	f := &fakeNotifier{}
+	d := newDaemon(t, f)
+	d.notes.quiet(time.Hour)
+	d.notes.saw(protocol.Change{Kind: protocol.KindSet, Collection: protocol.Items, Record: itemID, Field: "checked", Value: raw(true), HLC: "1795651300000-0000-pix", By: angelica}, false)
+	d.notes.flushAll()
+	if len(f.shown) != 0 {
+		t.Fatal("toast shown during quiet")
+	}
+}
+
+func setReminder(t *testing.T, d *Daemon, at time.Time) {
+	t.Helper()
+	if _, err := d.ApplyLocal([]protocol.Op{d.op(protocol.NoteState, listID, "reminder", at.UTC().Format(time.RFC3339))}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestReminderFiresOnceAndDoneSyncs(t *testing.T) {
+	f := &fakeNotifier{}
+	d := newDaemon(t, f)
+	setReminder(t, d, time.Now().Add(-time.Minute))
+
+	d.notes.checkReminders()
+	d.notes.checkReminders() // a second pass (or a restart) must not refire
+	if len(f.shown) != 1 {
+		t.Fatalf("reminder toasts = %d, want 1", len(f.shown))
+	}
+	if !f.shown[0].Critical || len(f.shown[0].Actions) != 2 || !strings.Contains(f.shown[0].Body, "Groceries") {
+		t.Fatalf("toast = %+v", f.shown[0])
+	}
+
+	f.acts[0]("done")
+	var st protocol.State
+	if ok, _ := d.rep.Record(protocol.NoteState, listID, &st); !ok || !st.ReminderDone {
+		t.Fatalf("state after Done = %+v", st)
+	}
+	queued, _ := d.rep.Pending(0)
+	if len(queued) != 2 || queued[1].Op.Field != "reminder_done" {
+		t.Fatalf("outbox = %+v", queued)
+	}
+}
+
+func TestReminderSnooze(t *testing.T) {
+	f := &fakeNotifier{}
+	d := newDaemon(t, f)
+	setReminder(t, d, time.Now().Add(-time.Minute))
+	d.notes.checkReminders()
+	f.acts[0]("snooze")
+	next := d.notes.checkReminders()
+	if until := time.Until(next); until < 9*time.Minute || until > 11*time.Minute {
+		t.Fatalf("snoozed reminder due in %v, want about 10m", until)
+	}
+}
+
+func TestOldReminderIsSkipped(t *testing.T) {
+	f := &fakeNotifier{}
+	d := newDaemon(t, f)
+	setReminder(t, d, time.Now().Add(-13*time.Hour))
+	d.notes.checkReminders()
+	if len(f.shown) != 0 {
+		t.Fatal("a reminder 13 hours late fired")
+	}
+}
+
+func TestReminderDoneElsewhereClosesToast(t *testing.T) {
+	f := &fakeNotifier{}
+	d := newDaemon(t, f)
+	setReminder(t, d, time.Now().Add(-time.Minute))
+	d.notes.checkReminders()
+	// The phone marks it done; the change arrives through the feed.
+	if err := d.rep.ApplyChanges([]protocol.Change{{Seq: 6, Kind: protocol.KindSet, Collection: protocol.NoteState,
+		Record: listID, Field: "reminder_done", Value: raw(true), HLC: d.clock.Now(), By: me}}, 6); err != nil {
+		t.Fatal(err)
+	}
+	d.notes.checkReminders()
+	if len(f.closed) != 1 || f.closed[0] != 1 {
+		t.Fatalf("closed = %v, want the reminder toast", f.closed)
+	}
+}
+
+func TestSocketCaptureAndState(t *testing.T) {
+	d := newDaemon(t, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() { d.Run(ctx); close(done) }()
+	c := sock.New(d.opts.Socket)
+	deadline := time.Now().Add(3 * time.Second)
+	for !c.Up(ctx) {
+		if time.Now().After(deadline) {
+			t.Fatal("socket never came up")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	r, err := c.Call(ctx, sock.Request{Op: "preview", Text: "groc: eggs, coffee"})
+	if err != nil || r.Plan == nil || r.Plan.Summary != `Add "eggs", "coffee" to Groceries` {
+		t.Fatalf("preview = %+v, %v", r, err)
+	}
+	if _, err := c.Call(ctx, sock.Request{Op: "capture", Text: "groc: eggs, coffee"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Call(ctx, sock.Request{Op: "check", Item: itemID, On: true}); err != nil {
+		t.Fatal(err)
+	}
+	s, err := c.Snapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Items) != 3 {
+		t.Fatalf("items after capture = %+v", s.Items)
+	}
+	ev := d.stateEvent()
+	if len(ev.Notes) != 1 || ev.Notes[0].Open != 2 || ev.Notes[0].Done != 1 || !ev.Notes[0].Shared {
+		t.Fatalf("state = %+v", ev.Notes)
+	}
+	if n, _ := d.rep.PendingCount(); n != 7 { // 3 per new item + the check
+		t.Fatalf("pending = %d, want 7", n)
+	}
+	cancel()
+	<-done
+}

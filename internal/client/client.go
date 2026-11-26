@@ -272,11 +272,29 @@ func (c *Client) Download(ctx context.Context, a protocol.Attachment, thumb stri
 // reconnects with Last-Event-ID until ctx ends. A connection with no bytes
 // for staleAfter (two missed pings) counts as dead.
 func (c *Client) Stream(ctx context.Context, since int64, fn func(protocol.Change) error) error {
+	return c.StreamWith(ctx, since, fn, StreamHooks{})
+}
+
+// StreamHooks report stream life to a long-running client (chitd). Each may
+// be nil.
+type StreamHooks struct {
+	OnConnect    func()
+	OnDisconnect func(error)
+	// OnCursor gets every cursor move, including the payload-free "cursor"
+	// events that skip rows the reader cannot see.
+	OnCursor func(int64)
+}
+
+// StreamWith is Stream with hooks.
+func (c *Client) StreamWith(ctx context.Context, since int64, fn func(protocol.Change) error, hooks StreamHooks) error {
 	const staleAfter = 2*time.Minute + 10*time.Second
 	cursor := since
 	backoff := time.Second
 	for {
-		err := c.streamOnce(ctx, &cursor, staleAfter, fn)
+		err := c.streamOnce(ctx, &cursor, staleAfter, fn, hooks)
+		if hooks.OnDisconnect != nil && ctx.Err() == nil {
+			hooks.OnDisconnect(err)
+		}
 		if ctx.Err() != nil {
 			return nil
 		}
@@ -302,7 +320,7 @@ type callbackError struct{ err error }
 
 func (e *callbackError) Error() string { return e.err.Error() }
 
-func (c *Client) streamOnce(ctx context.Context, cursor *int64, staleAfter time.Duration, fn func(protocol.Change) error) error {
+func (c *Client) streamOnce(ctx context.Context, cursor *int64, staleAfter time.Duration, fn func(protocol.Change) error, hooks StreamHooks) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.Server+"/api/chit/stream?since="+strconv.FormatInt(*cursor, 10), nil)
@@ -325,6 +343,9 @@ func (c *Client) streamOnce(ctx context.Context, cursor *int64, staleAfter time.
 	}
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("stream: %s", resp.Status)
+	}
+	if hooks.OnConnect != nil {
+		hooks.OnConnect()
 	}
 
 	// Watchdog: any line (data or ping) proves the connection is alive.
@@ -357,9 +378,10 @@ func (c *Client) streamOnce(ctx context.Context, cursor *int64, staleAfter time.
 		line := sc.Text()
 		switch {
 		case line == "":
+			moved := false
 			if id != "" {
-				if n, err := strconv.ParseInt(id, 10, 64); err == nil {
-					*cursor = n
+				if n, err := strconv.ParseInt(id, 10, 64); err == nil && n != *cursor {
+					*cursor, moved = n, true
 				}
 			}
 			if event == "change" && data.Len() > 0 {
@@ -369,6 +391,8 @@ func (c *Client) streamOnce(ctx context.Context, cursor *int64, staleAfter time.
 						return &callbackError{err}
 					}
 				}
+			} else if moved && hooks.OnCursor != nil {
+				hooks.OnCursor(*cursor)
 			}
 			id, event = "", ""
 			data.Reset()

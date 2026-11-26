@@ -21,9 +21,12 @@ import (
 	"golang.org/x/term"
 
 	"github.com/slastra/chit/internal/client"
+	"github.com/slastra/chit/internal/config"
 	"github.com/slastra/chit/internal/hlc"
+	"github.com/slastra/chit/internal/notes"
 	"github.com/slastra/chit/internal/order"
 	"github.com/slastra/chit/internal/protocol"
+	"github.com/slastra/chit/internal/sock"
 )
 
 var jsonOut bool
@@ -39,7 +42,7 @@ func main() {
 	root.AddCommand(
 		loginCmd(), logoutCmd(), peopleCmd(), lsCmd(), showCmd(), newCmd(), addCmd(),
 		checkCmd(), rmCmd(), pinCmd(true), pinCmd(false), shareCmd(), unshareCmd(), watchCmd(),
-		attachCmd(), getCmd(), detachCmd(),
+		attachCmd(), getCmd(), detachCmd(), remindCmd(), statusCmd(),
 		&cobra.Command{
 			Use:   "version",
 			Short: "Print the chit version",
@@ -68,15 +71,27 @@ func version() string {
 }
 
 // session is a signed-in client plus the config it came from.
+// backend is where reads and edits go: chitd's replica when it is running
+// (instant, works offline), else the server. Sharing and files always talk
+// to the server directly.
+type backend interface {
+	Snapshot(ctx context.Context) (*protocol.Snapshot, error)
+	Ops(ctx context.Context, ops []protocol.Op) (*protocol.OpsResponse, error)
+	People(ctx context.Context) ([]protocol.Person, error)
+	Stream(ctx context.Context, since int64, fn func(protocol.Change) error) error
+}
+
 type session struct {
-	cfg   *config
+	cfg   *config.Config
 	c     *client.Client
+	b     backend
+	chitd bool // b is chitd
 	clock *hlc.Clock
 }
 
 // open loads the config and refreshes the token when it is close to expiring.
 func open(ctx context.Context) (*session, error) {
-	cfg, err := loadConfig()
+	cfg, err := config.Load()
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +103,13 @@ func open(ctx context.Context) (*session, error) {
 		if a, err := s.c.Refresh(ctx); err == nil {
 			cfg.Token, cfg.User = a.Token, a.User
 			s.c.Token = a.Token
-			_ = cfg.save()
+			_ = cfg.Save()
+		}
+	}
+	s.b = s.c
+	if os.Getenv("CHIT_DIRECT") == "" {
+		if d := sock.New(sock.DefaultPath()); d.Up(ctx) {
+			s.b, s.chitd = d, true
 		}
 	}
 	return s, nil
@@ -114,7 +135,7 @@ func (s *session) observe(snap *protocol.Snapshot) {
 }
 
 func (s *session) snapshot(ctx context.Context) (*protocol.Snapshot, error) {
-	snap, err := s.c.Snapshot(ctx)
+	snap, err := s.b.Snapshot(ctx)
 	if err == nil {
 		s.observe(snap)
 	}
@@ -128,7 +149,7 @@ func (s *session) op(collection, id, field string, value any) protocol.Op {
 
 // send applies ops and turns the first rejected op into an error.
 func (s *session) send(ctx context.Context, ops ...protocol.Op) error {
-	resp, err := s.c.Ops(ctx, ops)
+	resp, err := s.b.Ops(ctx, ops)
 	if err != nil {
 		return err
 	}
@@ -167,7 +188,7 @@ func loginCmd() *cobra.Command {
 			"~/.config/chit/config.json (mode 600).",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := loadConfig()
+			cfg, err := config.Load()
 			if err != nil {
 				return err
 			}
@@ -204,22 +225,15 @@ func loginCmd() *cobra.Command {
 				return err
 			}
 			cfg.Token, cfg.User = a.Token, a.User
-			if err := cfg.save(); err != nil {
+			if err := cfg.Save(); err != nil {
 				return err
 			}
-			fmt.Printf("Signed in to %s as %s.\n", cfg.Server, displayName(a.User))
+			fmt.Printf("Signed in to %s as %s.\n", cfg.Server, notes.DisplayName(a.User))
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&email, "email", "", "account email")
 	return cmd
-}
-
-func displayName(p protocol.Person) string {
-	if p.Name != "" {
-		return p.Name
-	}
-	return p.Email
 }
 
 func logoutCmd() *cobra.Command {
@@ -228,12 +242,12 @@ func logoutCmd() *cobra.Command {
 		Short: "Forget the saved session",
 		Args:  cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
-			cfg, err := loadConfig()
+			cfg, err := config.Load()
 			if err != nil {
 				return err
 			}
 			cfg.Token = ""
-			return cfg.save()
+			return cfg.Save()
 		},
 	}
 }
@@ -248,7 +262,7 @@ func peopleCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			people, err := s.c.People(cmd.Context())
+			people, err := s.b.People(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -268,24 +282,6 @@ func peopleCmd() *cobra.Command {
 	}
 }
 
-func membersOf(snap *protocol.Snapshot, noteID string) []protocol.Member {
-	var out []protocol.Member
-	for _, m := range snap.Members {
-		if m.Note == noteID {
-			out = append(out, m)
-		}
-	}
-	return out
-}
-
-func nameMap(people []protocol.Person) map[string]string {
-	m := map[string]string{}
-	for _, p := range people {
-		m[p.ID] = displayName(p)
-	}
-	return m
-}
-
 func lsCmd() *cobra.Command {
 	var archived, trashed bool
 	cmd := &cobra.Command{
@@ -302,42 +298,42 @@ func lsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			var notes []protocol.Note
+			var shown []protocol.Note
 			for _, n := range snap.Notes {
-				st := stateOf(snap, n.ID)
+				st := notes.StateOf(snap, n.ID)
 				if (n.Trashed != "") != trashed || (!trashed && st.Archived != archived) {
 					continue
 				}
-				notes = append(notes, n)
+				shown = append(shown, n)
 			}
-			sort.SliceStable(notes, func(i, j int) bool {
-				pi, pj := stateOf(snap, notes[i].ID).Pinned, stateOf(snap, notes[j].ID).Pinned
+			sort.SliceStable(shown, func(i, j int) bool {
+				pi, pj := notes.StateOf(snap, shown[i].ID).Pinned, notes.StateOf(snap, shown[j].ID).Pinned
 				if pi != pj {
 					return pi
 				}
-				return notes[i].Updated > notes[j].Updated
+				return shown[i].Updated > shown[j].Updated
 			})
 			if jsonOut {
-				return printJSON(notes)
+				return printJSON(shown)
 			}
-			if len(notes) == 0 {
+			if len(shown) == 0 {
 				fmt.Fprintln(os.Stderr, "No notes.")
 				return nil
 			}
-			people, err := s.c.People(ctx)
+			people, err := s.b.People(ctx)
 			if err != nil {
 				return err
 			}
-			names := nameMap(people)
+			names := notes.Names(people)
 			w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-			for _, n := range notes {
+			for _, n := range shown {
 				pin := " "
-				if stateOf(snap, n.ID).Pinned {
+				if notes.StateOf(snap, n.ID).Pinned {
 					pin = "*"
 				}
 				detail := ""
 				if n.Kind == "list" {
-					items := itemsOf(snap, n.ID)
+					items := notes.ItemsOf(snap, n.ID)
 					done := 0
 					for _, it := range items {
 						if it.Checked {
@@ -352,7 +348,7 @@ func lsCmd() *cobra.Command {
 				if n.Owner != s.cfg.User.ID {
 					with = append(with, names[n.Owner])
 				}
-				for _, m := range membersOf(snap, n.ID) {
+				for _, m := range notes.MembersOf(snap, n.ID) {
 					if m.User != s.cfg.User.ID {
 						with = append(with, names[m.User])
 					}
@@ -361,7 +357,7 @@ func lsCmd() *cobra.Command {
 				if len(with) > 0 {
 					shared = "with " + strings.Join(with, ", ")
 				}
-				fmt.Fprintf(w, "%s %s\t%s\t%s\t%s\n", pin, noteTitle(n), n.Kind, detail, shared)
+				fmt.Fprintf(w, "%s %s\t%s\t%s\t%s\n", pin, notes.Title(n), n.Kind, detail, shared)
 			}
 			return w.Flush()
 		},
@@ -400,11 +396,11 @@ func showCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			n, err := findNote(snap, args[0])
+			n, err := notes.FindNote(snap, args[0])
 			if err != nil {
 				return err
 			}
-			items := sortedItems(itemsOf(snap, n.ID))
+			items := sortedItems(notes.ItemsOf(snap, n.ID))
 			if jsonOut {
 				return printJSON(struct {
 					Note        protocol.Note         `json:"note"`
@@ -412,9 +408,12 @@ func showCmd() *cobra.Command {
 					State       protocol.State        `json:"state"`
 					Members     []protocol.Member     `json:"members"`
 					Attachments []protocol.Attachment `json:"attachments"`
-				}{n, items, stateOf(snap, n.ID), membersOf(snap, n.ID), attachmentsOf(snap, n.ID)})
+				}{n, items, notes.StateOf(snap, n.ID), notes.MembersOf(snap, n.ID), notes.AttachmentsOf(snap, n.ID)})
 			}
-			fmt.Println(noteTitle(n))
+			fmt.Println(notes.Title(n))
+			if line := reminderLine(notes.StateOf(snap, n.ID)); line != "" {
+				fmt.Println(line)
+			}
 			if n.Kind == "list" {
 				// Keep's order: open items, then the checked ones.
 				for _, checked := range []bool{false, true} {
@@ -433,18 +432,18 @@ func showCmd() *cobra.Command {
 				fmt.Println()
 				fmt.Println(n.Body)
 			}
-			if files := attachmentsOf(snap, n.ID); len(files) > 0 {
+			if files := notes.AttachmentsOf(snap, n.ID); len(files) > 0 {
 				fmt.Println("\nAttachments:")
 				for _, a := range files {
 					fmt.Printf("  %s (%s)\n", a.Name, humanSize(a.Size))
 				}
 			}
-			if members := membersOf(snap, n.ID); len(members) > 0 || n.Owner != s.cfg.User.ID {
-				people, err := s.c.People(ctx)
+			if members := notes.MembersOf(snap, n.ID); len(members) > 0 || n.Owner != s.cfg.User.ID {
+				people, err := s.b.People(ctx)
 				if err != nil {
 					return err
 				}
-				names := nameMap(people)
+				names := notes.Names(people)
 				parts := []string{names[n.Owner] + " (owner)"}
 				for _, m := range members {
 					parts = append(parts, fmt.Sprintf("%s (%s)", names[m.User], m.Role))
@@ -484,7 +483,7 @@ func newCmd() *cobra.Command {
 					}
 				}
 			}
-			id := newID()
+			id := config.NewID()
 			kind := "text"
 			if list {
 				kind = "list"
@@ -521,7 +520,7 @@ func itemOps(s *session, noteID, last string, texts []string) []protocol.Op {
 			continue
 		}
 		last = order.After(last)
-		id := newID()
+		id := config.NewID()
 		ops = append(ops,
 			s.op(protocol.Items, id, "note", noteID),
 			s.op(protocol.Items, id, "text", t),
@@ -554,15 +553,15 @@ func addCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			n, err := findNote(snap, args[0])
+			n, err := notes.FindNote(snap, args[0])
 			if err != nil {
 				return err
 			}
 			if n.Kind != "list" {
-				return fmt.Errorf("%q is a text note, not a list", noteTitle(n))
+				return fmt.Errorf("%q is a text note, not a list", notes.Title(n))
 			}
 			last := ""
-			for _, it := range itemsOf(snap, n.ID) {
+			for _, it := range notes.ItemsOf(snap, n.ID) {
 				if it.Order > last {
 					last = it.Order
 				}
@@ -575,7 +574,7 @@ func addCmd() *cobra.Command {
 				return err
 			}
 			if !jsonOut {
-				fmt.Printf("Added %d to %s.\n", len(ops)/3, noteTitle(n))
+				fmt.Printf("Added %d to %s.\n", len(ops)/3, notes.Title(n))
 			}
 			return nil
 		},
@@ -598,14 +597,14 @@ func checkCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			n, err := findNote(snap, args[0])
+			n, err := notes.FindNote(snap, args[0])
 			if err != nil {
 				return err
 			}
 			var ops []protocol.Op
 			var names []string
 			for _, q := range args[1:] {
-				it, err := findItem(snap, n.ID, q)
+				it, err := notes.FindItem(snap, n.ID, q)
 				if err != nil {
 					return err
 				}
@@ -645,7 +644,7 @@ func rmCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			n, err := findNote(snap, args[0])
+			n, err := notes.FindNote(snap, args[0])
 			if err != nil {
 				return err
 			}
@@ -679,7 +678,7 @@ func pinCmd(pin bool) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			n, err := findNote(snap, args[0])
+			n, err := notes.FindNote(snap, args[0])
 			if err != nil {
 				return err
 			}
@@ -704,15 +703,15 @@ func shareCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			n, err := findNote(snap, args[0])
+			n, err := notes.FindNote(snap, args[0])
 			if err != nil {
 				return err
 			}
-			people, err := s.c.People(ctx)
+			people, err := s.b.People(ctx)
 			if err != nil {
 				return err
 			}
-			p, err := findPerson(people, args[1])
+			p, err := notes.FindPerson(people, args[1])
 			if err != nil {
 				return err
 			}
@@ -724,7 +723,7 @@ func shareCmd() *cobra.Command {
 				return err
 			}
 			if !jsonOut {
-				fmt.Printf("Shared %s with %s (%s).\n", noteTitle(n), displayName(p), role)
+				fmt.Printf("Shared %s with %s (%s).\n", notes.Title(n), notes.DisplayName(p), role)
 			}
 			return nil
 		},
@@ -748,15 +747,15 @@ func unshareCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			n, err := findNote(snap, args[0])
+			n, err := notes.FindNote(snap, args[0])
 			if err != nil {
 				return err
 			}
-			people, err := s.c.People(ctx)
+			people, err := s.b.People(ctx)
 			if err != nil {
 				return err
 			}
-			p, err := findPerson(people, args[1])
+			p, err := notes.FindPerson(people, args[1])
 			if err != nil {
 				return err
 			}

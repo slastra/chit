@@ -8,27 +8,13 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/slastra/chit/internal/config"
+	"github.com/slastra/chit/internal/notes"
 	"github.com/slastra/chit/internal/protocol"
 )
 
 // maxUpload matches the server's attachment limit.
 const maxUpload = 25 << 20
-
-func attachmentsOf(s *protocol.Snapshot, noteID string) []protocol.Attachment {
-	var out []protocol.Attachment
-	for _, a := range s.Attachments {
-		if a.Note == noteID && !a.Deleted {
-			out = append(out, a)
-		}
-	}
-	return out
-}
-
-func findAttachment(s *protocol.Snapshot, noteID, query string) (protocol.Attachment, error) {
-	return match("attachment", query, attachmentsOf(s, noteID),
-		func(a protocol.Attachment) string { return a.ID },
-		func(a protocol.Attachment) string { return a.Name })
-}
 
 func humanSize(n int64) string {
 	switch {
@@ -55,7 +41,7 @@ func attachCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			n, err := findNote(snap, args[0])
+			n, err := notes.FindNote(snap, args[0])
 			if err != nil {
 				return err
 			}
@@ -74,13 +60,13 @@ func attachCmd() *cobra.Command {
 			}
 			var done []protocol.Attachment
 			for _, p := range args[1:] {
-				resp, err := s.c.Upload(ctx, n.ID, newID(), p)
+				resp, err := s.c.Upload(ctx, n.ID, config.NewID(), p)
 				if err != nil {
 					return fmt.Errorf("%s: %w", p, err)
 				}
 				done = append(done, resp.Attachment)
 				if !jsonOut {
-					fmt.Printf("Attached %s (%s) to %s.\n", resp.Attachment.Name, humanSize(resp.Attachment.Size), noteTitle(n))
+					fmt.Printf("Attached %s (%s) to %s.\n", resp.Attachment.Name, humanSize(resp.Attachment.Size), notes.Title(n))
 				}
 			}
 			if jsonOut {
@@ -109,11 +95,11 @@ func getCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			n, err := findNote(snap, args[0])
+			n, err := notes.FindNote(snap, args[0])
 			if err != nil {
 				return err
 			}
-			a, err := findAttachment(snap, n.ID, args[1])
+			a, err := notes.FindAttachment(snap, n.ID, args[1])
 			if err != nil {
 				return err
 			}
@@ -171,11 +157,11 @@ func detachCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			n, err := findNote(snap, args[0])
+			n, err := notes.FindNote(snap, args[0])
 			if err != nil {
 				return err
 			}
-			a, err := findAttachment(snap, n.ID, args[1])
+			a, err := notes.FindAttachment(snap, n.ID, args[1])
 			if err != nil {
 				return err
 			}
@@ -183,7 +169,7 @@ func detachCmd() *cobra.Command {
 				return err
 			}
 			if !jsonOut {
-				fmt.Printf("Removed %s from %s.\n", a.Name, noteTitle(n))
+				fmt.Printf("Removed %s from %s.\n", a.Name, notes.Title(n))
 			}
 			return nil
 		},

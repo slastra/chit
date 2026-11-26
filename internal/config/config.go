@@ -1,4 +1,6 @@
-package main
+// Package config reads and writes ~/.config/chit/config.json, shared by the
+// CLI and chitd.
+package config
 
 import (
 	"crypto/rand"
@@ -11,16 +13,23 @@ import (
 	"github.com/slastra/chit/internal/protocol"
 )
 
-// config is ~/.config/chit/config.json. It holds a session token, so it is
+// Config is ~/.config/chit/config.json. It holds a session token, so it is
 // written mode 600.
-type config struct {
+type Config struct {
 	Server string          `json:"server"`
 	Token  string          `json:"token,omitempty"`
 	Device string          `json:"device"`
 	User   protocol.Person `json:"user"`
+
+	// ActivityToasts turns chitd's toasts for other people's edits on shared
+	// notes on or off. Missing means on.
+	ActivityToasts *bool `json:"activity_toasts,omitempty"`
 }
 
-func configPath() (string, error) {
+// Toasts reports whether activity toasts are on.
+func (c *Config) Toasts() bool { return c.ActivityToasts == nil || *c.ActivityToasts }
+
+func Path() (string, error) {
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
@@ -28,12 +37,13 @@ func configPath() (string, error) {
 	return filepath.Join(dir, "chit", "config.json"), nil
 }
 
-func loadConfig() (*config, error) {
-	p, err := configPath()
+// Load reads the config, filling in a device id the first time.
+func Load() (*Config, error) {
+	p, err := Path()
 	if err != nil {
 		return nil, err
 	}
-	c := &config{}
+	c := &Config{}
 	b, err := os.ReadFile(p)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
@@ -44,7 +54,7 @@ func loadConfig() (*config, error) {
 		}
 	}
 	if c.Device == "" {
-		c.Device = randomString(8)
+		c.Device = RandomString(8)
 	}
 	if env := os.Getenv("CHIT_SERVER"); env != "" {
 		c.Server = env
@@ -52,8 +62,9 @@ func loadConfig() (*config, error) {
 	return c, nil
 }
 
-func (c *config) save() error {
-	p, err := configPath()
+// Save writes the config atomically, mode 600.
+func (c *Config) Save() error {
+	p, err := Path()
 	if err != nil {
 		return err
 	}
@@ -73,8 +84,8 @@ func (c *config) save() error {
 
 const idAlphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
 
-// randomString draws n characters from [a-z0-9] without modulo bias.
-func randomString(n int) string {
+// RandomString draws n characters from [a-z0-9] without modulo bias.
+func RandomString(n int) string {
 	out := make([]byte, 0, n)
 	buf := make([]byte, n*2)
 	for len(out) < n {
@@ -91,5 +102,5 @@ func randomString(n int) string {
 	return string(out)
 }
 
-// newID makes a record id in PocketBase's format.
-func newID() string { return randomString(15) }
+// NewID makes a record id in PocketBase's format.
+func NewID() string { return RandomString(15) }
