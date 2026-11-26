@@ -363,3 +363,68 @@ func TestFetchPendingUsesTheQueuedCopy(t *testing.T) {
 		t.Fatalf("state files = %+v", ev.Notes[0].Files)
 	}
 }
+
+func TestConvertBothWays(t *testing.T) {
+	d := newDaemon(t, nil)
+	if _, err := d.ApplyLocal([]protocol.Op{
+		d.op(protocol.Notes, "text00000000001", "kind", "text"),
+		d.op(protocol.Notes, "text00000000001", "body", "socks\n\n  shirts \ncharger"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.convert("text00000000001", "list"); err != nil {
+		t.Fatal(err)
+	}
+	s, _ := d.rep.Snapshot()
+	items := notes.ItemsOf(s, "text00000000001")
+	sort.Slice(items, func(i, j int) bool { return items[i].Order < items[j].Order })
+	if len(items) != 3 || items[1].Text != "shirts" {
+		t.Fatalf("items = %+v", items)
+	}
+	if err := d.convert("text00000000001", "text"); err != nil {
+		t.Fatal(err)
+	}
+	s, _ = d.rep.Snapshot()
+	var n protocol.Note
+	for _, x := range s.Notes {
+		if x.ID == "text00000000001" {
+			n = x
+		}
+	}
+	if n.Kind != "text" || n.Body != "socks\nshirts\ncharger" || len(notes.ItemsOf(s, n.ID)) != 0 {
+		t.Fatalf("back to text: %+v, items %d", n, len(notes.ItemsOf(s, n.ID)))
+	}
+}
+
+func TestAttachToAnExistingNote(t *testing.T) {
+	d := newDaemon(t, nil)
+	d.opts.UploadDir = filepath.Join(t.TempDir(), "uploads")
+	src := filepath.Join(t.TempDir(), "receipt.pdf")
+	os.WriteFile(src, []byte("%PDF-1.4"), 0o600)
+	r := d.dispatch(context.Background(), nil, sock.Request{Op: "attach", Note: listID, Paths: []string{src}})
+	if !r.OK {
+		t.Fatalf("attach: %+v", r)
+	}
+	ups, _ := d.rep.PendingUploads()
+	if len(ups) != 1 || ups[0].Note != listID {
+		t.Fatalf("uploads = %+v", ups)
+	}
+}
+
+func TestNewNoteColorAndPin(t *testing.T) {
+	d := newDaemon(t, nil)
+	r := d.dispatch(context.Background(), nil, sock.Request{Op: "compose", Draft: &capture.Draft{Title: "Plan", Body: "x", Color: "teal", Pinned: true}})
+	if !r.OK {
+		t.Fatalf("compose: %+v", r)
+	}
+	ev := d.stateEvent()
+	var got *sock.ShellNote
+	for i := range ev.Notes {
+		if ev.Notes[i].Title == "Plan" {
+			got = &ev.Notes[i]
+		}
+	}
+	if got == nil || got.Color != "teal" || !got.Pinned {
+		t.Fatalf("new note = %+v", got)
+	}
+}

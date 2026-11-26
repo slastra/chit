@@ -46,6 +46,8 @@ type Request struct {
 	After string `json:"after,omitempty"`
 	// fetch: an attachment id and an optional thumb size ("320x320")
 	Thumb string `json:"thumb,omitempty"`
+	// convert: the kind a note becomes ("text" or "list")
+	Kind string `json:"kind,omitempty"`
 }
 
 // Reply answers one Request.

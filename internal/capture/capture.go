@@ -38,6 +38,9 @@ type Plan struct {
 	Summary string   `json:"summary"`
 	// Files to attach to NoteID once the note's edits are on the server.
 	Files []File `json:"files,omitempty"`
+	// A new note's color and starting pin.
+	Color  string `json:"color,omitempty"`
+	Pinned bool   `json:"pinned,omitempty"`
 }
 
 // ErrEmpty means there is nothing to save.
@@ -206,7 +209,7 @@ func (p Plan) Ops(snap *protocol.Snapshot, now func() string, newID func() strin
 		if id == "" {
 			id = newID()
 		}
-		ops := []protocol.Op{op(protocol.Notes, id, "kind", "list")}
+		ops := append([]protocol.Op{op(protocol.Notes, id, "kind", "list")}, p.styleOps(id, op)...)
 		if p.Title != "" {
 			ops = append(ops, op(protocol.Notes, id, "title", p.Title))
 		}
@@ -225,7 +228,7 @@ func (p Plan) Ops(snap *protocol.Snapshot, now func() string, newID func() strin
 		if id == "" {
 			id = newID()
 		}
-		ops := []protocol.Op{op(protocol.Notes, id, "kind", "text")}
+		ops := append([]protocol.Op{op(protocol.Notes, id, "kind", "text")}, p.styleOps(id, op)...)
 		if p.Title != "" {
 			ops = append(ops, op(protocol.Notes, id, "title", p.Title))
 		}
@@ -239,4 +242,16 @@ func (p Plan) Ops(snap *protocol.Snapshot, now func() string, newID func() strin
 func jsonOf(v any) json.RawMessage {
 	b, _ := json.Marshal(v)
 	return b
+}
+
+// styleOps sets a new note's color and pin.
+func (p Plan) styleOps(id string, op func(collection, id, field string, v any) protocol.Op) []protocol.Op {
+	var ops []protocol.Op
+	if p.Color != "" {
+		ops = append(ops, op(protocol.Notes, id, "color", p.Color))
+	}
+	if p.Pinned {
+		ops = append(ops, op(protocol.NoteState, id, "pinned", true))
+	}
+	return ops
 }

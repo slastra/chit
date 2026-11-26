@@ -181,6 +181,31 @@ func (d *Daemon) dispatch(ctx context.Context, c *conn, req sock.Request) sock.R
 		}
 		return sock.Reply{OK: true, ID: id}
 
+	case "attach":
+		var files []capture.File
+		for _, p := range req.Paths {
+			f := capture.Inspect(p)
+			if f.Error != "" {
+				return fail(fmt.Errorf("%s: %s", f.Name, f.Error))
+			}
+			files = append(files, f)
+		}
+		s, err := d.rep.Snapshot()
+		if err != nil {
+			return fail(err)
+		}
+		plan := capture.Plan{Kind: capture.Attach, NoteID: req.Note, Files: files}
+		if err := d.compose(&plan, s); err != nil {
+			return fail(err)
+		}
+		return sock.Reply{OK: true, Plan: &plan}
+
+	case "convert":
+		if err := d.convert(req.Note, req.Kind); err != nil {
+			return fail(err)
+		}
+		return sock.Reply{OK: true}
+
 	case "fetch":
 		path, err := d.fetch(ctx, req.ID, req.Thumb)
 		if err != nil {

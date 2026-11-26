@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/slastra/chit/internal/config"
 	"github.com/slastra/chit/internal/notes"
@@ -62,6 +63,59 @@ func (d *Daemon) addItem(noteID, text, after string) (string, error) {
 		d.op(protocol.Items, id, "order", order.Between(prev, next)),
 	})
 	return id, err
+}
+
+// convert turns a text note into a checklist (one item per body line) or a
+// checklist into text (one line per item, open ones first).
+func (d *Daemon) convert(noteID, kind string) error {
+	s, err := d.rep.Snapshot()
+	if err != nil {
+		return err
+	}
+	var note *protocol.Note
+	for i := range s.Notes {
+		if s.Notes[i].ID == noteID {
+			note = &s.Notes[i]
+		}
+	}
+	if note == nil {
+		return errors.New("no such note")
+	}
+	if note.Kind == kind {
+		return nil
+	}
+	var ops []protocol.Op
+	switch kind {
+	case "list":
+		last := ""
+		for _, line := range strings.Split(note.Body, "\n") {
+			if t := strings.TrimSpace(line); t != "" {
+				last = order.After(last)
+				id := config.NewID()
+				ops = append(ops, d.op(protocol.Items, id, "note", noteID), d.op(protocol.Items, id, "text", t),
+					d.op(protocol.Items, id, "order", last))
+			}
+		}
+		ops = append(ops, d.op(protocol.Notes, noteID, "body", ""), d.op(protocol.Notes, noteID, "kind", "list"))
+	case "text":
+		items := notes.ItemsOf(s, noteID)
+		sort.SliceStable(items, func(i, j int) bool {
+			if items[i].Checked != items[j].Checked {
+				return !items[i].Checked
+			}
+			return items[i].Order < items[j].Order
+		})
+		var lines []string
+		for _, it := range items {
+			lines = append(lines, it.Text)
+			ops = append(ops, d.op(protocol.Items, it.ID, "deleted", true))
+		}
+		ops = append(ops, d.op(protocol.Notes, noteID, "body", strings.Join(lines, "\n")), d.op(protocol.Notes, noteID, "kind", "text"))
+	default:
+		return fmt.Errorf("kind is text or list")
+	}
+	_, err = d.ApplyLocal(ops)
+	return err
 }
 
 // fetch returns a local file for an attachment: the queued copy while it

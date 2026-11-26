@@ -21,6 +21,9 @@ type Draft struct {
 	Body  string   `json:"body"`
 	List  bool     `json:"list"`
 	Files []string `json:"files"` // local paths
+	// For a new note: its color and whether it starts pinned.
+	Color  string `json:"color,omitempty"`
+	Pinned bool   `json:"pinned,omitempty"`
 }
 
 // File describes one file to attach, checked before anything is saved.
@@ -88,7 +91,7 @@ func Compose(d Draft, snap *protocol.Snapshot) (Plan, error) {
 		return Plan{}, ErrEmpty
 	}
 
-	if title == "" && !d.List && !strings.Contains(body, "\n") {
+	if title == "" && !d.List && d.Color == "" && !d.Pinned && !strings.Contains(body, "\n") {
 		line := strings.TrimSpace(body)
 		if name, ok := strings.CutSuffix(line, ":"); ok && len(files) > 0 {
 			n, found, err := target(snap, strings.TrimSpace(name))
@@ -123,11 +126,11 @@ func Compose(d Draft, snap *protocol.Snapshot) (Plan, error) {
 				items = append(items, t)
 			}
 		}
-		p := Plan{Kind: NewList, Title: title, Items: items, Files: files}
+		p := Plan{Kind: NewList, Title: title, Items: items, Files: files, Color: d.Color, Pinned: d.Pinned}
 		p.Summary = "New list" + quoted(title) + " with " + count(len(items), "item") + withFiles(len(files))
 		return p, nil
 	}
-	p := Plan{Kind: NewNote, Title: title, Text: strings.TrimSpace(body), Files: files}
+	p := Plan{Kind: NewNote, Title: title, Text: strings.TrimSpace(body), Files: files, Color: d.Color, Pinned: d.Pinned}
 	p.Summary = "New note" + quoted(title) + withFiles(len(files))
 	if p.Title == "" && p.Text == "" && len(files) > 0 {
 		p.Summary = "New note with " + count(len(files), "file")

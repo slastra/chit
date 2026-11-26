@@ -54,6 +54,8 @@ Types are in `internal/sock`.
 | `compose` | `draft` | `plan` (and does it; files join the upload queue) |
 | `set` | `collection`, `id`, `field`, `value` | `results` (one field; see below) |
 | `add-item` | `note`, `text`, `after` | `id` of the new item (after `after`, else at the end) |
+| `attach` | `note`, `paths` | files onto an existing note (checked, queued like a draft's) |
+| `convert` | `note`, `kind` | a note becomes a checklist (`list`, one item per line) or `text` |
 | `fetch` | `id`, `thumb` | `path`: a local copy of an attachment (or its `320x320` / `1080x0` thumb), cached |
 | `check` | `item`, `on` | `results` |
 | `pin` | `note`, `on` | `results` |
@@ -94,12 +96,13 @@ exactly one title. So "re: taxes" or "meet at 3:30" stay new notes.
 
 ## Composer drafts
 
-lastshell's composer sends a draft: `{title, body, list, files: [paths]}`.
+lastshell's note panel sends a draft: `{title, body, list, files: [paths], color, pinned}`.
 
 - With no title, a one-line body keeps the capture grammar (above). `groceries:` with
   files attaches them to Groceries.
 - `list: true` makes a checklist, one item per body line.
-- Otherwise it is a new note with that title and body.
+- Otherwise it is a new note with that title and body, in `color`, pinned if `pinned`.
+  Choosing a color or a pin turns the quick grammar off: it is a note being made.
 
 Files are checked first (a regular file, 25 MB at most). On `compose` each is copied to
 `$XDG_DATA_HOME/chit/uploads/<id>/<name>` and shows in the replica at once as a pending
