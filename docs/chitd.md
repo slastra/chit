@@ -49,6 +49,9 @@ Types are in `internal/sock`.
 | `people` | `fresh` | `people` (cached for an hour, served stale offline) |
 | `preview` | `text` | `plan` (what `capture` would do) |
 | `capture` | `text` | `plan` (and does it) |
+| `files` | `paths` | `files`: each path checked (size, type, image, or `error`) |
+| `compose-preview` | `draft` | `plan` (what `compose` would do) |
+| `compose` | `draft` | `plan` (and does it; files join the upload queue) |
 | `check` | `item`, `on` | `results` |
 | `pin` | `note`, `on` | `results` |
 | `subscribe` | `changes` | `{"ok":true}`, then pushed events |
@@ -78,6 +81,22 @@ Pushed to subscribers:
 
 The part before `:` must be a note's exact title, or a prefix (two characters or more) of
 exactly one title. So "re: taxes" or "meet at 3:30" stay new notes.
+
+## Composer drafts
+
+lastshell's composer sends a draft: `{title, body, list, files: [paths]}`.
+
+- With no title, a one-line body keeps the capture grammar (above). `groceries:` with
+  files attaches them to Groceries.
+- `list: true` makes a checklist, one item per body line.
+- Otherwise it is a new note with that title and body.
+
+Files are checked first (a regular file, 25 MB at most). On `compose` each is copied to
+`$XDG_DATA_HOME/chit/uploads/<id>/<name>` and shows in the replica at once as a pending
+attachment. Uploads start once the outbox is empty, so the note exists on the server
+first, and retry until they land. A file the server refuses for good (too big, note gone)
+is dropped. The copies mean a note saved offline keeps its files even if the originals
+go.
 
 ## Toasts
 

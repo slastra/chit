@@ -28,6 +28,9 @@ import (
 type Options struct {
 	Replica *replica.Replica
 	Socket  string
+	// UploadDir holds copies of files waiting to upload, so a note saved
+	// offline keeps its attachments even if the originals go.
+	UploadDir string
 	// LoadConfig reads the signed-in session; it is called again whenever
 	// the daemon reconnects, so chit login takes effect without a restart.
 	LoadConfig func() (*config.Config, error)
@@ -400,8 +403,11 @@ func (d *Daemon) flushOnce(ctx context.Context) (int, error) {
 		return 0, nil
 	}
 	queued, err := d.rep.Pending(500)
-	if err != nil || len(queued) == 0 {
+	if err != nil {
 		return 0, err
+	}
+	if len(queued) == 0 {
+		return d.flushUploads(ctx, c)
 	}
 	ops := make([]protocol.Op, len(queued))
 	seqs := make([]int64, len(queued))

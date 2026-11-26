@@ -137,6 +137,32 @@ func (d *Daemon) dispatch(ctx context.Context, c *conn, req sock.Request) sock.R
 		}
 		return sock.Reply{OK: true, Plan: &plan}
 
+	case "files":
+		files := make([]capture.File, len(req.Paths))
+		for i, p := range req.Paths {
+			files[i] = capture.Inspect(p)
+		}
+		return sock.Reply{OK: true, Files: files}
+
+	case "compose-preview", "compose":
+		if req.Draft == nil {
+			return fail(fmt.Errorf("no draft"))
+		}
+		s, err := d.rep.Snapshot()
+		if err != nil {
+			return fail(err)
+		}
+		plan, err := capture.Compose(*req.Draft, s)
+		if err != nil {
+			return fail(err)
+		}
+		if req.Op == "compose" {
+			if err := d.compose(&plan, s); err != nil {
+				return fail(err)
+			}
+		}
+		return sock.Reply{OK: true, Plan: &plan}
+
 	case "check":
 		res, err := d.ApplyLocal([]protocol.Op{d.op(protocol.Items, req.Item, "checked", req.On)})
 		return opReply(res, err)

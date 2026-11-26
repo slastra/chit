@@ -19,6 +19,10 @@ const (
 	AddItems   = "add-items"
 	AppendText = "append-text"
 	NewNote    = "new-note"
+	NewList    = "new-list"
+	// Attach only adds files to an existing note ("groceries:" plus a
+	// pasted receipt).
+	Attach = "attach"
 )
 
 type Plan struct {
@@ -32,6 +36,8 @@ type Plan struct {
 	Title   string   `json:"title,omitempty"`
 	Text    string   `json:"text,omitempty"`
 	Summary string   `json:"summary"`
+	// Files to attach to NoteID once the note's edits are on the server.
+	Files []File `json:"files,omitempty"`
 }
 
 // ErrEmpty means there is nothing to save.
@@ -193,8 +199,32 @@ func (p Plan) Ops(snap *protocol.Snapshot, now func() string, newID func() strin
 			}
 		}
 		return []protocol.Op{op(protocol.Notes, p.NoteID, "body", body)}
+	case Attach:
+		return nil
+	case NewList:
+		id := p.NoteID
+		if id == "" {
+			id = newID()
+		}
+		ops := []protocol.Op{op(protocol.Notes, id, "kind", "list")}
+		if p.Title != "" {
+			ops = append(ops, op(protocol.Notes, id, "title", p.Title))
+		}
+		last := ""
+		for _, text := range p.Items {
+			last = order.After(last)
+			item := newID()
+			ops = append(ops,
+				op(protocol.Items, item, "note", id),
+				op(protocol.Items, item, "text", text),
+				op(protocol.Items, item, "order", last))
+		}
+		return ops
 	default:
-		id := newID()
+		id := p.NoteID
+		if id == "" {
+			id = newID()
+		}
 		ops := []protocol.Op{op(protocol.Notes, id, "kind", "text")}
 		if p.Title != "" {
 			ops = append(ops, op(protocol.Notes, id, "title", p.Title))

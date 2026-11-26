@@ -43,6 +43,13 @@ CREATE TABLE IF NOT EXISTS outbox (
 	op      TEXT NOT NULL,
 	created TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS uploads (
+	id      TEXT PRIMARY KEY,
+	note    TEXT NOT NULL,
+	path    TEXT NOT NULL,
+	record  TEXT NOT NULL,
+	created TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS meta (
 	key   TEXT PRIMARY KEY,
 	value TEXT NOT NULL
@@ -116,7 +123,7 @@ func (r *Replica) Wipe() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.tx(func(tx *sql.Tx) error {
-		for _, q := range []string{"DELETE FROM records", "DELETE FROM outbox", "DELETE FROM meta WHERE key IN ('cursor', 'user', 'server')"} {
+		for _, q := range []string{"DELETE FROM records", "DELETE FROM outbox", "DELETE FROM uploads", "DELETE FROM meta WHERE key IN ('cursor', 'user', 'server')"} {
 			if _, err := tx.Exec(q); err != nil {
 				return err
 			}
@@ -292,7 +299,103 @@ func (r *Replica) ReplaceAll(s *protocol.Snapshot) error {
 				return err
 			}
 		}
+		// Files still waiting to upload are not on the server yet either.
+		rows, err := tx.Query("SELECT record FROM uploads")
+		if err != nil {
+			return err
+		}
+		var waiting []string
+		for rows.Next() {
+			var rec string
+			if err := rows.Scan(&rec); err != nil {
+				rows.Close()
+				return err
+			}
+			waiting = append(waiting, rec)
+		}
+		rows.Close()
+		for _, raw := range waiting {
+			rec := record{}
+			if err := json.Unmarshal([]byte(raw), &rec); err != nil {
+				return err
+			}
+			if err := store(tx, protocol.Attachments, rec); err != nil {
+				return err
+			}
+		}
 		return setMeta(tx, MetaCursor, strconv.FormatInt(s.Seq, 10))
+	})
+}
+
+// Upload is a file waiting to go to the server.
+type Upload struct {
+	ID, Note, Path string
+}
+
+// QueueUpload records a file to upload as attachment a (its ID chosen
+// here), and shows it in the replica as pending right away.
+func (r *Replica) QueueUpload(a protocol.Attachment, path string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	a.Pending, a.Local = true, path
+	if a.Created == "" {
+		a.Created = pbTime(r.Now())
+	}
+	rec, err := toRecord(a)
+	if err != nil {
+		return err
+	}
+	return r.tx(func(tx *sql.Tx) error {
+		if err := store(tx, protocol.Attachments, rec); err != nil {
+			return err
+		}
+		b, _ := json.Marshal(rec)
+		if _, err := tx.Exec("INSERT INTO uploads (id, note, path, record, created) VALUES (?, ?, ?, ?, ?)",
+			a.ID, a.Note, path, string(b), a.Created); err != nil {
+			return err
+		}
+		return r.touch(tx, a.Note)
+	})
+}
+
+// PendingUploads lists queued files, oldest first.
+func (r *Replica) PendingUploads() ([]Upload, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	rows, err := r.db.Query("SELECT id, note, path FROM uploads ORDER BY created, id")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Upload
+	for rows.Next() {
+		var u Upload
+		if err := rows.Scan(&u.ID, &u.Note, &u.Path); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+// FinishUpload ends a queued upload: with the server's record it replaces
+// the pending one; with nil (the server refused it) the attachment goes.
+func (r *Replica) FinishUpload(id string, server *protocol.Attachment) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.tx(func(tx *sql.Tx) error {
+		if _, err := tx.Exec("DELETE FROM uploads WHERE id = ?", id); err != nil {
+			return err
+		}
+		if server == nil {
+			_, err := tx.Exec("DELETE FROM records WHERE collection = ? AND id = ?", protocol.Attachments, id)
+			return err
+		}
+		rec, err := toRecord(*server)
+		if err != nil {
+			return err
+		}
+		return store(tx, protocol.Attachments, rec)
 	})
 }
 

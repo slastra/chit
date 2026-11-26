@@ -3,12 +3,14 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/slastra/chit/internal/capture"
 	"github.com/slastra/chit/internal/config"
 	"github.com/slastra/chit/internal/protocol"
 	"github.com/slastra/chit/internal/replica"
@@ -238,4 +240,62 @@ func TestSocketCaptureAndState(t *testing.T) {
 	}
 	cancel()
 	<-done
+}
+
+func TestComposeQueuesFilesAfterTheNote(t *testing.T) {
+	d := newDaemon(t, nil)
+	d.opts.UploadDir = filepath.Join(t.TempDir(), "uploads")
+	src := filepath.Join(t.TempDir(), "receipt.png")
+	if err := os.WriteFile(src, []byte("\x89PNG\r\n\x1a\nfake"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, _ := d.rep.Snapshot()
+	plan, err := capture.Compose(capture.Draft{Title: "Plumber", Body: "kitchen sink", Files: []string{src}}, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.compose(&plan, s); err != nil {
+		t.Fatal(err)
+	}
+	// The original can go; chitd kept a copy.
+	os.Remove(src)
+
+	ups, _ := d.rep.PendingUploads()
+	if len(ups) != 1 || ups[0].Note != plan.NoteID {
+		t.Fatalf("uploads = %+v (note %s)", ups, plan.NoteID)
+	}
+	if b, err := os.ReadFile(ups[0].Path); err != nil || string(b) != "\x89PNG\r\n\x1a\nfake" {
+		t.Fatalf("queued copy = %q, %v", b, err)
+	}
+	snap, _ := d.rep.Snapshot()
+	if len(snap.Attachments) != 1 || !snap.Attachments[0].Pending || snap.Attachments[0].Name != "receipt.png" {
+		t.Fatalf("attachments = %+v", snap.Attachments)
+	}
+
+	// A resync from a server that has not seen the note keeps both.
+	if err := d.rep.ReplaceAll(&protocol.Snapshot{Seq: 9, Notes: s.Notes, Items: s.Items}); err != nil {
+		t.Fatal(err)
+	}
+	snap, _ = d.rep.Snapshot()
+	var title string
+	for _, n := range snap.Notes {
+		if n.ID == plan.NoteID {
+			title = n.Title
+		}
+	}
+	if title != "Plumber" || len(snap.Attachments) != 1 {
+		t.Fatalf("after resync: note %q, attachments %+v", title, snap.Attachments)
+	}
+
+	// The server's record replaces the pending one.
+	if err := d.rep.FinishUpload(ups[0].ID, &protocol.Attachment{ID: ups[0].ID, Note: plan.NoteID, File: "receipt_x1.png", Name: "receipt.png"}); err != nil {
+		t.Fatal(err)
+	}
+	snap, _ = d.rep.Snapshot()
+	if len(snap.Attachments) != 1 || snap.Attachments[0].Pending || snap.Attachments[0].File != "receipt_x1.png" {
+		t.Fatalf("after upload = %+v", snap.Attachments)
+	}
+	if ups, _ := d.rep.PendingUploads(); len(ups) != 0 {
+		t.Fatal("upload still queued")
+	}
 }

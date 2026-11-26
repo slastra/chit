@@ -31,6 +31,10 @@ type Request struct {
 	Seconds int           `json:"seconds,omitempty"`
 	Changes bool          `json:"changes,omitempty"` // subscribe: also stream changes
 	Fresh   bool          `json:"fresh,omitempty"`   // people: skip the cache
+	// compose, compose-preview: the composer's draft
+	Draft *capture.Draft `json:"draft,omitempty"`
+	// files: paths to check before attaching
+	Paths []string `json:"paths,omitempty"`
 }
 
 // Reply answers one Request.
@@ -43,6 +47,7 @@ type Reply struct {
 	Results  []protocol.OpResult `json:"results,omitempty"`
 	People   []protocol.Person   `json:"people,omitempty"`
 	Plan     *capture.Plan       `json:"plan,omitempty"`
+	Files    []capture.File      `json:"files,omitempty"`
 }
 
 // ChangeEvent carries one change to subscribers that asked for them.

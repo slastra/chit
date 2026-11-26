@@ -142,6 +142,11 @@ type Attachment struct {
 	Deleted bool   `json:"deleted"`
 	Clocks  Clocks `json:"clocks"`
 	Created string `json:"created"`
+
+	// Set only in chitd's replica, for a file still waiting to upload: the
+	// server never sends them.
+	Pending bool   `json:"pending,omitempty"`
+	Local   string `json:"local,omitempty"`
 }
 
 // FilePath is the download path for an attachment, without the token.

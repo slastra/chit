@@ -68,6 +68,7 @@ func serve() error {
 	d, err := daemon.New(daemon.Options{
 		Replica:    rep,
 		Socket:     sock.DefaultPath(),
+		UploadDir:  filepath.Join(dataDir(), "uploads"),
 		LoadConfig: config.Load,
 		Notifier:   notifier,
 		Logf:       log.Printf,
