@@ -60,8 +60,12 @@ final class ChitApi {
     if (device.isNotEmpty) 'X-Chit-Device': device,
   };
 
-  Future<Object?> _send(String method, String path, {Object? body}) async {
+  /// [asDevice] false sends no device id, so the change comes back on this
+  /// device's own feed (the server leaves a device's own edits out, which
+  /// suits edits already applied here, not a share made on the server).
+  Future<Object?> _send(String method, String path, {Object? body, bool asDevice = true}) async {
     final req = http.Request(method, Uri.parse('$server$path'))..headers.addAll(_headers);
+    if (!asDevice) req.headers.remove('X-Chit-Device');
     if (body != null) {
       req.headers['Content-Type'] = 'application/json';
       req.body = jsonEncode(body);
@@ -200,12 +204,14 @@ final class ChitApi {
   }
 
   Future<int> share(String note, String user, {String role = 'editor'}) async =>
-      ((await _send('POST', '/api/chit/notes/$note/members', body: {'user': user, 'role': role}) as Json)['seq']
+      ((await _send('POST', '/api/chit/notes/$note/members', body: {'user': user, 'role': role}, asDevice: false)
+                  as Json)['seq']
               as num?)
           ?.toInt() ??
       0;
 
-  Future<void> unshare(String note, String user) => _send('DELETE', '/api/chit/notes/$note/members/$user');
+  Future<void> unshare(String note, String user) =>
+      _send('DELETE', '/api/chit/notes/$note/members/$user', asDevice: false);
 
   /// Follows the change stream from [since] until the connection ends (the
   /// caller reconnects) or the subscription is cancelled, which closes the

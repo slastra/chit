@@ -8,6 +8,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../core/order.dart';
 import '../core/protocol.dart';
+import '../core/roles.dart';
 import '../data/local_files.dart' show clipboardImage;
 import '../data/media.dart';
 import '../data/replica.dart';
@@ -17,6 +18,7 @@ import 'note_colors.dart';
 import 'app.dart' show themeSpecProvider;
 import 'attachments.dart';
 import 'check_motion.dart';
+import 'share_sheet.dart';
 import 'feedback.dart';
 import 'home_page.dart' show isExpanded;
 import 'theme.dart';
@@ -76,6 +78,9 @@ class _NotePageState extends ConsumerState<NotePage> {
   Library? _library;
 
   bool _dropping = false;
+
+  /// Whether this person may change the note's content (not a viewer).
+  bool _editable = true;
   late final _checkOff = CheckOff(() {
     if (mounted) setState(() {});
   });
@@ -206,7 +211,7 @@ class _NotePageState extends ConsumerState<NotePage> {
         e is KeyDownEvent &&
         e.logicalKey == LogicalKeyboardKey.keyV &&
         (HardwareKeyboard.instance.isControlPressed || HardwareKeyboard.instance.isMetaPressed);
-    if (paste && mounted && (ModalRoute.of(context)?.isCurrent ?? false)) {
+    if (paste && _editable && mounted && (ModalRoute.of(context)?.isCurrent ?? false)) {
       unawaited(() async {
         final img = await clipboardImage();
         if (img != null && mounted) {
@@ -340,6 +345,10 @@ class _NotePageState extends ConsumerState<NotePage> {
     final checked = items.where((i) => i.checked).toList();
     final state = lib.stateOf(_id);
     final owned = note == null || note.owner == me;
+    final members = lib.members[_id] ?? const <Member>[];
+    final role = note == null ? Role.owner : roleOf(note, members, me);
+    final editable = _editable = canEdit(role);
+    final shared = members.isNotEmpty || !owned;
     final trashed = note?.trashed.isNotEmpty ?? false;
 
     for (final it in items) {
@@ -376,6 +385,7 @@ class _NotePageState extends ConsumerState<NotePage> {
       child: _ItemRow(
         key: ValueKey(it.id),
         item: it,
+        editable: editable,
         checked: _checkOff.showsChecked(it.id) ? !it.checked : it.checked,
         controller: _itemCtl(it),
         focusNode: _itemNode(it.id),
@@ -441,6 +451,13 @@ class _NotePageState extends ConsumerState<NotePage> {
               ? IconButton(tooltip: 'Close', icon: const Icon(Icons.close), onPressed: () => context.pop())
               : null,
           actions: [
+            // the owner shares; anyone it is shared with sees with whom
+            if (_exists && note != null && (owned || shared))
+              IconButton(
+                tooltip: owned ? (shared ? 'Shared: change who' : 'Share') : 'Shared with you',
+                icon: Icon(shared ? Icons.group_outlined : Icons.person_add_alt_outlined),
+                onPressed: () => showShareSheet(context, _id),
+              ),
             IconButton(
               tooltip: state.pinned ? 'Unpin' : 'Pin',
               isSelected: state.pinned,
@@ -481,6 +498,7 @@ class _NotePageState extends ConsumerState<NotePage> {
         ),
         body: DropTarget(
           onDragEntered: (_) => setState(() => _dropping = true),
+          enable: editable,
           onDragExited: (_) => setState(() => _dropping = false),
           onDragDone: (d) async {
             setState(() => _dropping = false);
@@ -519,6 +537,7 @@ class _NotePageState extends ConsumerState<NotePage> {
                             contentInsertionConfiguration: _insertion,
                             controller: _title,
                             focusNode: _titleFocus,
+                            readOnly: !editable,
                             style: text.titleLarge,
                             decoration: const InputDecoration(hintText: 'Title', border: InputBorder.none),
                             textInputAction: TextInputAction.next,
@@ -532,6 +551,7 @@ class _NotePageState extends ConsumerState<NotePage> {
                             TextField(
                               controller: _body,
                               focusNode: _bodyFocus,
+                              readOnly: !editable,
                               style: text.bodyLarge,
                               decoration: const InputDecoration(hintText: 'Note', border: InputBorder.none),
                               maxLines: null,
@@ -543,12 +563,13 @@ class _NotePageState extends ConsumerState<NotePage> {
                             ),
                           if (isList) ...[
                             for (final it in open) itemRow(it),
-                            ListTile(
-                              leading: const Icon(Icons.add),
-                              title: const Text('List item'),
-                              contentPadding: const EdgeInsets.only(left: 16),
-                              onTap: () => _addItem(items),
-                            ),
+                            if (editable)
+                              ListTile(
+                                leading: const Icon(Icons.add),
+                                title: const Text('List item'),
+                                contentPadding: const EdgeInsets.only(left: 16),
+                                onTap: () => _addItem(items),
+                              ),
                             if (checked.isNotEmpty) ...[
                               const Divider(),
                               ListTile(
@@ -569,7 +590,11 @@ class _NotePageState extends ConsumerState<NotePage> {
                           if (others.isNotEmpty) ...[
                             const SizedBox(height: 8),
                             for (final a in others)
-                              FileRow(key: ValueKey(a.id), attachment: a, onRemove: () => _removeFile(a)),
+                              FileRow(
+                                key: ValueKey(a.id),
+                                attachment: a,
+                                onRemove: editable ? () => _removeFile(a) : null,
+                              ),
                           ],
                         ],
                       ),
@@ -601,6 +626,7 @@ class _NotePageState extends ConsumerState<NotePage> {
         ),
         bottomNavigationBar: _NoteBar(
           isList: isList,
+          editable: editable,
           inDialog: widget.inDialog,
           color: note?.color ?? '',
           edited: note?.updated ?? '',
@@ -619,6 +645,7 @@ class _ItemRow extends StatefulWidget {
   const _ItemRow({
     super.key,
     required this.item,
+    required this.editable,
     required this.checked,
     required this.controller,
     required this.focusNode,
@@ -629,6 +656,9 @@ class _ItemRow extends StatefulWidget {
   });
 
   final Item item;
+
+  /// A viewer sees the list but cannot change it.
+  final bool editable;
 
   /// What the row shows: the item's state, or where it is headed while it
   /// plays its check-off.
@@ -673,9 +703,10 @@ class _ItemRowState extends State<_ItemRow> {
         padding: EdgeInsets.only(left: 4.0 + it.indent * 28),
         child: Row(
           children: [
-            Checkbox(value: widget.checked, onChanged: (v) => widget.onCheck(v ?? false)),
+            Checkbox(value: widget.checked, onChanged: widget.editable ? (v) => widget.onCheck(v ?? false) : null),
             Expanded(
               child: TextField(
+                readOnly: !widget.editable,
                 controller: widget.controller,
                 focusNode: widget.focusNode,
                 style: theme.textTheme.bodyLarge?.copyWith(
@@ -695,7 +726,7 @@ class _ItemRowState extends State<_ItemRow> {
               child: IconButton(
                 tooltip: 'Remove ${it.text}',
                 icon: const Icon(Icons.close),
-                onPressed: active ? widget.onRemove : null,
+                onPressed: active && widget.editable ? widget.onRemove : null,
               ),
             ),
           ],
@@ -711,6 +742,7 @@ class _ItemRowState extends State<_ItemRow> {
 class _NoteBar extends StatelessWidget {
   const _NoteBar({
     required this.isList,
+    required this.editable,
     required this.inDialog,
     required this.color,
     required this.edited,
@@ -719,6 +751,9 @@ class _NoteBar extends StatelessWidget {
     required this.onAdd,
   });
   final bool isList;
+
+  /// A viewer gets no content tools, only when it was last edited.
+  final bool editable;
   final bool inDialog;
   final String color;
   final String edited;
@@ -739,52 +774,54 @@ class _NoteBar extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: [
-          IconButton(
-            tooltip: isList ? 'Turn into a note' : 'Turn into a checklist',
-            isSelected: isList,
-            icon: const Icon(Icons.check_box_outlined),
-            selectedIcon: const Icon(Icons.check_box),
-            onPressed: onToggleList,
-          ),
-          // Expanded windows: a popover beside the button (a menu, Material's
-          // pattern for a small anchored choice). Compact: a bottom sheet.
-          if (isExpanded(context))
-            MenuAnchor(
-              builder: (context, ctl, _) => IconButton(
-                tooltip: 'Background color',
-                icon: const Icon(Icons.palette_outlined),
-                onPressed: () => ctl.isOpen ? ctl.close() : ctl.open(),
-              ),
-              menuChildren: [
-                Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: SizedBox(
-                    width: 348, // two rows of six
-                    // a menu closes once a choice is made
-                    child: Builder(
-                      builder: (context) => _Swatches(
-                        current: color,
-                        onPick: (c) {
-                          onColor(c);
-                          MenuController.maybeOf(context)?.close();
-                        },
+          if (editable) ...[
+            IconButton(
+              tooltip: isList ? 'Turn into a note' : 'Turn into a checklist',
+              isSelected: isList,
+              icon: const Icon(Icons.check_box_outlined),
+              selectedIcon: const Icon(Icons.check_box),
+              onPressed: onToggleList,
+            ),
+            // Expanded windows: a popover beside the button (a menu, Material's
+            // pattern for a small anchored choice). Compact: a bottom sheet.
+            if (isExpanded(context))
+              MenuAnchor(
+                builder: (context, ctl, _) => IconButton(
+                  tooltip: 'Background color',
+                  icon: const Icon(Icons.palette_outlined),
+                  onPressed: () => ctl.isOpen ? ctl.close() : ctl.open(),
+                ),
+                menuChildren: [
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: SizedBox(
+                      width: 348, // two rows of six
+                      // a menu closes once a choice is made
+                      child: Builder(
+                        builder: (context) => _Swatches(
+                          current: color,
+                          onPick: (c) {
+                            onColor(c);
+                            MenuController.maybeOf(context)?.close();
+                          },
+                        ),
                       ),
                     ),
                   ),
+                ],
+              )
+            else
+              IconButton(
+                tooltip: 'Background color',
+                icon: const Icon(Icons.palette_outlined),
+                onPressed: () => showModalBottomSheet<void>(
+                  context: context,
+                  showDragHandle: true,
+                  builder: (_) => _ColorSheet(current: color, onPick: onColor),
                 ),
-              ],
-            )
-          else
-            IconButton(
-              tooltip: 'Background color',
-              icon: const Icon(Icons.palette_outlined),
-              onPressed: () => showModalBottomSheet<void>(
-                context: context,
-                showDragHandle: true,
-                builder: (_) => _ColorSheet(current: color, onPick: onColor),
               ),
-            ),
-          AddButton(onPick: onAdd),
+            AddButton(onPick: onAdd),
+          ],
           const Spacer(),
           if (when != null)
             Text(

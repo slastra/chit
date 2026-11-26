@@ -8,11 +8,13 @@ import 'package:intl/intl.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../core/protocol.dart';
+import '../core/roles.dart';
 import '../data/replica.dart';
 import '../state/providers.dart';
 import 'attachments.dart';
 import 'check_motion.dart';
 import 'note_colors.dart';
+import 'people.dart';
 
 /// A note on the grid: title, the start of the body or the open items, and
 /// small marks for pinned, reminder, shared and files. A plain note is an
@@ -64,8 +66,8 @@ class _NoteCardState extends ConsumerState<NoteCard> {
       (kinds[a.kind] ??= []).add(a);
     }
     final uploading = others.where((a) => a.pending).firstOrNull;
-    final shared =
-        (library.members[note.id]?.isNotEmpty ?? false) || note.owner != ref.watch(sessionProvider).value?.user.id;
+    final me = ref.watch(sessionProvider).value?.user.id ?? '';
+    final shared = (library.members[note.id]?.isNotEmpty ?? false) || note.owner != me;
     final reminder = state.reminderDone ? '' : state.reminder;
 
     // the "Empty note" placeholder is for notes with nothing at all: a
@@ -134,7 +136,10 @@ class _NoteCardState extends ConsumerState<NoteCard> {
                         // whole, checked, around it
                         last: !allDone && open.length == 1,
                         enter: revealing,
-                        onCheck: () => _check(ref, it),
+                        // a viewer's card shows the list but checks nothing
+                        onCheck: canEdit(roleOf(note, library.members[note.id] ?? const <Member>[], me))
+                            ? () => _check(ref, it)
+                            : null,
                       ),
                 ],
               ),
@@ -179,7 +184,15 @@ class _NoteCardState extends ConsumerState<NoteCard> {
                                 },
                               ),
                             if (uploading != null) UploadMark(uploading, size: 14),
-                            if (shared) _Mark(icon: Icons.group_outlined, ink: faint, tooltip: 'Shared'),
+                            if (shared)
+                              _Sharers(
+                                ids: [
+                                  if (note.owner != me) note.owner,
+                                  for (final m in library.members[note.id] ?? const <Member>[])
+                                    if (m.user != me) m.user,
+                                ],
+                                ring: scheme?.primaryContainer ?? theme.colorScheme.surface,
+                              ),
                           ],
                         ),
                       ),
@@ -260,7 +273,7 @@ class _ItemLine extends StatefulWidget {
   });
   final Item item;
   final Color ink;
-  final VoidCallback onCheck;
+  final VoidCallback? onCheck;
 
   /// Space above the line, folded away with it.
   final double topGap;
@@ -285,14 +298,17 @@ class _ItemLineState extends State<_ItemLine> {
   void _send() {
     if (_sent) return;
     _sent = true;
-    widget.onCheck();
+    widget.onCheck?.call();
   }
 
   /// Checked already: shown struck through, and not a button.
   bool get _done => widget.item.checked;
 
+  /// A viewer's line: shown as it is, not a button.
+  bool get _locked => widget.onCheck == null;
+
   void _check() {
-    if (_checked || _done) return;
+    if (_checked || _done || _locked) return;
     unawaited(HapticFeedback.selectionClick());
     if (MediaQuery.disableAnimationsOf(context)) {
       _send();
@@ -339,11 +355,11 @@ class _ItemLineState extends State<_ItemLine> {
             // its own tap target (taller than the glyph, so it is easy to hit),
             // so checking does not open the note
             Semantics(
-              button: !_done,
+              button: !_done && !_locked,
               checked: checked,
               label: _done ? widget.item.text : 'Check ${widget.item.text}',
               child: InkResponse(
-                onTap: _done ? null : _check,
+                onTap: _done || _locked ? null : _check,
                 radius: 18,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(2, 2, 10, 2),
@@ -466,6 +482,43 @@ class _CardImages extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// Who else is on a shared note: their faces, overlapping, three at most
+/// and a count for more; their names on hover.
+class _Sharers extends ConsumerWidget {
+  const _Sharers({required this.ids, required this.ring});
+  final List<String> ids;
+  final Color ring;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final people = ref.watch(peopleProvider).value ?? const <Person>[];
+    final shown = ids.take(3).toList();
+    const r = 11.0;
+    return Tooltip(
+      message: 'Shared with ${ids.map((i) => nameOf(people, i)).join(', ')}',
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: r * 2 + (shown.length - 1) * r * 1.3 + 4,
+            height: r * 2 + 4,
+            child: Stack(
+              children: [
+                for (final (i, id) in shown.indexed)
+                  Positioned(
+                    left: i * r * 1.3,
+                    child: PersonAvatar(id: id, radius: r, ring: ring),
+                  ),
+              ],
+            ),
+          ),
+          if (ids.length > 3) Text('+${ids.length - 3}', style: Theme.of(context).textTheme.labelMedium),
+        ],
+      ),
     );
   }
 }
