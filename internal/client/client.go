@@ -11,8 +11,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -74,6 +77,12 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 		return err
 	}
 	defer resp.Body.Close()
+	return decodeResponse(resp, out)
+}
+
+// decodeResponse turns an error status into an error, or decodes a JSON body
+// into out (when out is not nil).
+func decodeResponse(resp *http.Response, out any) error {
 	if resp.StatusCode == http.StatusUnauthorized {
 		return ErrUnauthorized
 	}
@@ -184,6 +193,79 @@ func (c *Client) Unshare(ctx context.Context, note, user string) (int64, error) 
 	var resp protocol.SeqResponse
 	err := c.do(ctx, http.MethodDelete, "/api/chit/notes/"+url.PathEscape(note)+"/members/"+url.PathEscape(user), nil, &resp)
 	return resp.Seq, err
+}
+
+// Upload sends the file at path to noteID as attachment id. The body streams
+// from disk, so large files are never held in memory.
+func (c *Client) Upload(ctx context.Context, noteID, id, path string) (*protocol.AttachResponse, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	pr, pw := io.Pipe()
+	mw := multipart.NewWriter(pw)
+	go func() {
+		err := mw.WriteField("id", id)
+		if err == nil {
+			var part io.Writer
+			if part, err = mw.CreateFormFile("file", filepath.Base(path)); err == nil {
+				if _, err = io.Copy(part, f); err == nil {
+					err = mw.Close()
+				}
+			}
+		}
+		pw.CloseWithError(err)
+	}()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.Server+"/api/chit/notes/"+url.PathEscape(noteID)+"/attachments", pr)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.Header.Set("Authorization", c.Token)
+	req.Header.Set("X-Chit-Device", c.Device)
+	up := &http.Client{Timeout: 10 * time.Minute}
+	resp, err := up.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	var out protocol.AttachResponse
+	if err := decodeResponse(resp, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// Download writes an attachment to w, fetching a short-lived file token first.
+// thumb is "" for the original, or one of the sizes in protocol.Attachment.
+func (c *Client) Download(ctx context.Context, a protocol.Attachment, thumb string, w io.Writer) error {
+	var tok struct {
+		Token string `json:"token"`
+	}
+	if err := c.do(ctx, http.MethodPost, "/api/files/token", nil, &tok); err != nil {
+		return err
+	}
+	q := url.Values{"token": {tok.Token}}
+	if thumb != "" {
+		q.Set("thumb", thumb)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.Server+a.FilePath()+"?"+q.Encode(), nil)
+	if err != nil {
+		return err
+	}
+	resp, err := (&http.Client{Timeout: 10 * time.Minute}).Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return decodeResponse(resp, nil)
+	}
+	_, err = io.Copy(w, resp.Body)
+	return err
 }
 
 // Stream follows the live feed from since, calling fn for each change, and

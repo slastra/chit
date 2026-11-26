@@ -12,6 +12,9 @@ const (
 	Labels    = "labels"
 	NoteState = "note_state"
 	Members   = "note_members"
+	// Attachments are created by upload (POST /notes/{id}/attachments);
+	// ops can only set deleted.
+	Attachments = "attachments"
 )
 
 // Op sets one field of one record. For note_state, ID is the note's id: each
@@ -126,6 +129,26 @@ type Label struct {
 	Clocks  Clocks `json:"clocks"`
 }
 
+// Attachment is a file on a note. File is the stored filename; download it
+// from /api/files/attachments/{ID}/{File}?token=<file token>, adding
+// &thumb=320x320 or &thumb=1080x0 for an image preview.
+type Attachment struct {
+	ID      string `json:"id"`
+	Note    string `json:"note"`
+	File    string `json:"file"`
+	Name    string `json:"name"`
+	Size    int64  `json:"size"`
+	Type    string `json:"type"`
+	Deleted bool   `json:"deleted"`
+	Clocks  Clocks `json:"clocks"`
+	Created string `json:"created"`
+}
+
+// FilePath is the download path for an attachment, without the token.
+func (a Attachment) FilePath() string {
+	return "/api/files/" + Attachments + "/" + a.ID + "/" + a.File
+}
+
 // Snapshot is everything the caller can see, as of Seq. Deleted records are
 // left out. A client that gets a reset event replaces its replica with this.
 type Snapshot struct {
@@ -135,11 +158,18 @@ type Snapshot struct {
 	Members []Member `json:"members"`
 	State   []State  `json:"state"`
 	Labels  []Label  `json:"labels"`
+
+	Attachments []Attachment `json:"attachments"`
 }
 
 type ShareRequest struct {
 	User string `json:"user"`
 	Role string `json:"role"`
+}
+
+type AttachResponse struct {
+	Seq        int64      `json:"seq"`
+	Attachment Attachment `json:"attachment"`
 }
 
 type SeqResponse struct {

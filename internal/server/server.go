@@ -28,6 +28,7 @@ func Register(app core.App) *Broker {
 		g.GET("/snapshot", handleSnapshot)
 		g.GET("/stream", func(e *core.RequestEvent) error { return handleStream(e, b) })
 		g.POST("/notes/{id}/members", func(e *core.RequestEvent) error { return handleShare(e, b) })
+		g.POST("/notes/{id}/attachments", func(e *core.RequestEvent) error { return handleAttach(e, b) })
 		g.DELETE("/notes/{id}/members/{user}", func(e *core.RequestEvent) error { return handleUnshare(e, b) })
 		return se.Next()
 	})
@@ -112,7 +113,7 @@ func mapErr(err error) error {
 	case errors.Is(err, errNotFound):
 		return apis.NewNotFoundError("note or user not found", nil)
 	case errors.Is(err, errNotAllowed):
-		return apis.NewForbiddenError("only the note's owner can do that", nil)
+		return apis.NewForbiddenError("you do not have permission for that on this note", nil)
 	case errors.Is(err, errBadRequest):
 		return apis.NewBadRequestError("bad share request", nil)
 	}

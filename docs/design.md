@@ -153,12 +153,24 @@ data: {}
 Any signed-in user can list the accounts on the instance
 (`GET /api/collections/users/records`), to pick who to share with.
 
-## Attachments (planned)
+## Attachments
 
-An `attachments` collection (note, file, name, size, type, deleted) using PocketBase file
-storage on disk or R2. Uploads go through a chit route that checks edit access; downloads
-use PocketBase protected files with short-lived file tokens, readable by anyone who can see
-the note. Creating or removing one is a normal `record` or `set` change.
+Files on a note live in the `attachments` collection (note, file, name, size, type,
+deleted), stored by PocketBase on disk under `/pb_data/storage` (or S3/R2 if configured in
+the admin UI). The limit is 25 MB per file, under PocketBase's 32 MB request limit.
+
+- **Upload:** `POST /api/chit/notes/{id}/attachments`, multipart with `file` and `id` (a
+  client-generated record id). Owner and editors only. Retrying with the same `id` returns
+  the attachment that already landed instead of storing a second copy. The server records
+  the original filename, the size, and a content type sniffed from the bytes (falling back
+  to the extension). Feed: a `record` change on the note.
+- **Download:** the file is protected. Get a short-lived token with `POST /api/files/token`,
+  then `GET /api/files/attachments/{id}/{file}?token=…`. Anyone who can see the note can
+  download; everyone else gets 404. Add `&thumb=320x320` or `&thumb=1080x0` for an image
+  preview.
+- **Remove:** an op setting `deleted` on the attachment (owner and editors). Nothing else
+  on an attachment is writable through ops, and ops cannot create one.
+- A new member's share snapshot includes the note's attachments.
 
 ## Notifications
 

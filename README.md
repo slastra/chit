@@ -9,11 +9,12 @@ server-sent event stream. The desktop side is a small daemon built for
 a separate repo.
 
 **Status:** early. The server and the `chit` CLI work end to end: notes, lists, sharing,
-and a live change feed. `chitd`, attachments, and the apps are next.
+attachments, and a live change feed. `chitd` and the apps are next.
 
 ## Features
 
 - Text notes and checklists, with colors, pins, labels, archive and trash
+- Attachments up to 25 MB, with image thumbnails, visible only to people on the note
 - Sharing per note with other accounts on the server, as editor or viewer
 - Offline-first: every device keeps a replica and merges by field
 - Reminders scheduled on each device, with no push service in the middle
@@ -55,6 +56,9 @@ chit ls                                  # --archived, --trashed
 chit pin groceries
 chit people
 chit share groceries angelica            # --viewer for read-only
+chit attach groceries receipt.jpg        # files up to 25 MB
+chit get groceries receipt               # download (-o PATH, --thumb 320x320)
+chit detach groceries receipt
 chit watch                               # live changes, Ctrl-C to stop
 ```
 

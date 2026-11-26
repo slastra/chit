@@ -64,12 +64,16 @@ type watcher struct {
 	titles map[string]string
 	items  map[string]watchedItem
 	shares map[string]protocol.Member // by membership id, as last announced
+	files  map[string]protocol.Attachment
 }
 
 func newWatcher(snap *protocol.Snapshot, names map[string]string, me string) *watcher {
-	w := &watcher{me: me, names: names, titles: map[string]string{}, items: map[string]watchedItem{}, shares: map[string]protocol.Member{}}
+	w := &watcher{me: me, names: names, titles: map[string]string{}, items: map[string]watchedItem{}, shares: map[string]protocol.Member{}, files: map[string]protocol.Attachment{}}
 	for _, n := range snap.Notes {
 		w.titles[n.ID] = noteTitle(n)
+	}
+	for _, a := range snap.Attachments {
+		w.files[a.ID] = a
 	}
 	for _, m := range snap.Members {
 		w.shares[m.ID] = m
@@ -141,6 +145,15 @@ func (w *watcher) describe(c protocol.Change) string {
 				return ""
 			}
 			return fmt.Sprintf("%s added %q to %s", who, it.Text, w.title(it.Note))
+		case protocol.Attachments:
+			var a protocol.Attachment
+			_ = json.Unmarshal(c.Value, &a)
+			_, known := w.files[a.ID]
+			w.files[a.ID] = a
+			if known {
+				return ""
+			}
+			return fmt.Sprintf("%s attached %s to %s", who, a.Name, w.title(a.Note))
 		case protocol.NoteState:
 			// The first per-user change on a note creates its state record.
 			var st protocol.State
@@ -203,6 +216,11 @@ func (w *watcher) describe(c protocol.Change) string {
 				}
 			case "order", "indent":
 				return fmt.Sprintf("%s rearranged %s", who, t)
+			}
+		case protocol.Attachments:
+			if c.Field == "deleted" && truthy {
+				a := w.files[c.Record]
+				return fmt.Sprintf("%s removed %s from %s", who, a.Name, w.title(a.Note))
 			}
 		case protocol.NoteState:
 			t := w.title(c.Record)

@@ -77,10 +77,10 @@ func share(app core.App, me *core.Record, device, noteID, userID, role string) (
 	return seq, err
 }
 
-// snapshotInto writes note, its live items and its members into one user's feed.
+// snapshotInto writes note, its live items, attachments and members into one user's feed.
 func snapshotInto(tx core.App, userID string, note *core.Record, by, device string) (int64, error) {
 	rows := []*core.Record{note}
-	var items, members []*core.Record
+	var items, members, files []*core.Record
 	if err := tx.RecordQuery(protocol.Items).
 		AndWhere(dbx.HashExp{"note": note.Id, "deleted": false}).
 		OrderBy("order ASC").All(&items); err != nil {
@@ -90,7 +90,11 @@ func snapshotInto(tx core.App, userID string, note *core.Record, by, device stri
 		AndWhere(dbx.HashExp{"note": note.Id}).All(&members); err != nil {
 		return 0, err
 	}
-	rows = append(append(rows, items...), members...)
+	if err := tx.RecordQuery(protocol.Attachments).
+		AndWhere(dbx.HashExp{"note": note.Id, "deleted": false}).All(&files); err != nil {
+		return 0, err
+	}
+	rows = append(append(append(rows, items...), files...), members...)
 
 	var seq int64
 	for _, r := range rows {

@@ -127,10 +127,24 @@ func TestOneStatePerUserAndNote(t *testing.T) {
 
 func TestDownReverses(t *testing.T) {
 	app := newApp(t)
-	if err := down(app); err != nil {
+	n := len(core.AppMigrations.Items())
+	reverted, err := core.NewMigrationsRunner(app, core.AppMigrations).Down(n)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := app.FindCollectionByNameOrId("notes"); err == nil {
-		t.Fatal("notes still exists after down")
+	if len(reverted) != n {
+		t.Fatalf("reverted %d of %d migrations", len(reverted), n)
+	}
+	for _, name := range []string{"notes", "attachments"} {
+		if _, err := app.FindCollectionByNameOrId(name); err == nil {
+			t.Fatalf("%s still exists after down", name)
+		}
+	}
+	users, err := app.FindCollectionByNameOrId("users")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if users.CreateRule == nil || *users.CreateRule != "" {
+		t.Fatal("users create rule not restored")
 	}
 }

@@ -39,6 +39,7 @@ func main() {
 	root.AddCommand(
 		loginCmd(), logoutCmd(), peopleCmd(), lsCmd(), showCmd(), newCmd(), addCmd(),
 		checkCmd(), rmCmd(), pinCmd(true), pinCmd(false), shareCmd(), unshareCmd(), watchCmd(),
+		attachCmd(), getCmd(), detachCmd(),
 		&cobra.Command{
 			Use:   "version",
 			Short: "Print the chit version",
@@ -406,11 +407,12 @@ func showCmd() *cobra.Command {
 			items := sortedItems(itemsOf(snap, n.ID))
 			if jsonOut {
 				return printJSON(struct {
-					Note    protocol.Note     `json:"note"`
-					Items   []protocol.Item   `json:"items"`
-					State   protocol.State    `json:"state"`
-					Members []protocol.Member `json:"members"`
-				}{n, items, stateOf(snap, n.ID), membersOf(snap, n.ID)})
+					Note        protocol.Note         `json:"note"`
+					Items       []protocol.Item       `json:"items"`
+					State       protocol.State        `json:"state"`
+					Members     []protocol.Member     `json:"members"`
+					Attachments []protocol.Attachment `json:"attachments"`
+				}{n, items, stateOf(snap, n.ID), membersOf(snap, n.ID), attachmentsOf(snap, n.ID)})
 			}
 			fmt.Println(noteTitle(n))
 			if n.Kind == "list" {
@@ -430,6 +432,12 @@ func showCmd() *cobra.Command {
 			} else if n.Body != "" {
 				fmt.Println()
 				fmt.Println(n.Body)
+			}
+			if files := attachmentsOf(snap, n.ID); len(files) > 0 {
+				fmt.Println("\nAttachments:")
+				for _, a := range files {
+					fmt.Printf("  %s (%s)\n", a.Name, humanSize(a.Size))
+				}
 			}
 			if members := membersOf(snap, n.ID); len(members) > 0 || n.Owner != s.cfg.User.ID {
 				people, err := s.c.People(ctx)

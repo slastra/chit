@@ -53,6 +53,9 @@ var specs = map[string]map[string]field{
 		"indent":  {kind: kInt},
 		"deleted": {kind: kBool},
 	},
+	protocol.Attachments: {
+		"deleted": {kind: kBool},
+	},
 	protocol.Labels: {
 		"name":    {kind: kText},
 		"deleted": {kind: kBool},
@@ -316,6 +319,14 @@ func loadTarget(tx core.App, me *core.Record, g *group, ops []protocol.Op, live 
 			rec = core.NewRecord(col)
 			rec.Id = g.id
 			return rec, true, n, parent, "", nil
+		}
+		n, msg, err := editable(rec.GetString("note"))
+		return rec, false, n, rec.GetString("note"), msg, err
+
+	case protocol.Attachments:
+		rec, err = tx.FindRecordById(col, g.id)
+		if err != nil {
+			return nil, false, nil, "", "unknown attachment; upload files with POST /api/chit/notes/{id}/attachments", nil
 		}
 		n, msg, err := editable(rec.GetString("note"))
 		return rec, false, n, rec.GetString("note"), msg, err

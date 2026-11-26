@@ -91,6 +91,20 @@ func labelOf(r *core.Record) protocol.Label {
 	}
 }
 
+func attachmentOf(r *core.Record) protocol.Attachment {
+	return protocol.Attachment{
+		ID:      r.Id,
+		Note:    r.GetString("note"),
+		File:    r.GetString("file"),
+		Name:    r.GetString("name"),
+		Size:    r.GetInt64("size"),
+		Type:    r.GetString("type"),
+		Deleted: r.GetBool("deleted"),
+		Clocks:  clocksOf(r),
+		Created: dateOf(r, "created"),
+	}
+}
+
 // wireRecord renders a record the way the feed and the snapshot send it.
 func wireRecord(r *core.Record) json.RawMessage {
 	var v any
@@ -105,6 +119,8 @@ func wireRecord(r *core.Record) json.RawMessage {
 		v = stateOf(r)
 	case protocol.Labels:
 		v = labelOf(r)
+	case protocol.Attachments:
+		v = attachmentOf(r)
 	}
 	b, _ := json.Marshal(v)
 	return b
@@ -146,7 +162,7 @@ func noteAccess(app core.App, userID, noteID string) (access, *core.Record, erro
 func snapshot(app core.App, userID string) (*protocol.Snapshot, error) {
 	s := &protocol.Snapshot{
 		Notes: []protocol.Note{}, Items: []protocol.Item{}, Members: []protocol.Member{},
-		State: []protocol.State{}, Labels: []protocol.Label{},
+		State: []protocol.State{}, Labels: []protocol.Label{}, Attachments: []protocol.Attachment{},
 	}
 	p := dbx.Params{"me": userID}
 	err := app.RunInTransaction(func(tx core.App) error {
@@ -154,7 +170,7 @@ func snapshot(app core.App, userID string) (*protocol.Snapshot, error) {
 		if s.Seq, err = head(tx); err != nil {
 			return err
 		}
-		var notes, items, members, states, labels []*core.Record
+		var notes, items, members, states, labels, files []*core.Record
 		if err := tx.RecordQuery(protocol.Notes).
 			AndWhere(dbx.NewExp("[[deleted]] = FALSE AND [[id]] IN ("+visibleNotes+")", p)).
 			OrderBy("created ASC").All(&notes); err != nil {
@@ -177,6 +193,14 @@ func snapshot(app core.App, userID string) (*protocol.Snapshot, error) {
 			AndWhere(dbx.NewExp("[[user]] = {:me} AND [[deleted]] = FALSE", p)).
 			OrderBy("name ASC").All(&labels); err != nil {
 			return err
+		}
+		if err := tx.RecordQuery(protocol.Attachments).
+			AndWhere(dbx.NewExp("[[deleted]] = FALSE AND [[note]] IN (SELECT id FROM notes WHERE deleted = FALSE AND id IN ("+visibleNotes+"))", p)).
+			OrderBy("created ASC").All(&files); err != nil {
+			return err
+		}
+		for _, r := range files {
+			s.Attachments = append(s.Attachments, attachmentOf(r))
 		}
 		for _, r := range notes {
 			s.Notes = append(s.Notes, noteOf(r))
