@@ -8,15 +8,15 @@ final messengerKey = GlobalKey<ScaffoldMessengerState>();
 /// instead of asking first.
 void showUndo(String message, VoidCallback undo) {
   final context = messengerKey.currentContext;
-  // a floating snackbar keeps to a readable width on a wide window
-  final wide = context != null && MediaQuery.sizeOf(context).width >= 840;
+  // Material's snackbar is at most 600dp wide
+  final wide = context != null && MediaQuery.sizeOf(context).width >= 600 + 2 * 12;
   messengerKey.currentState
     ?..hideCurrentSnackBar()
     ..showSnackBar(
       SnackBar(
         content: Text(message),
         behavior: SnackBarBehavior.floating,
-        width: wide ? 560 : null,
+        width: wide ? 600 : null,
         action: SnackBarAction(label: 'Undo', onPressed: undo),
       ),
     );

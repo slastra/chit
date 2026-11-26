@@ -19,29 +19,65 @@ ThemeData buildTheme(ColorScheme? dynamicScheme, Brightness brightness, [ThemeSp
             ),
       );
 
+/// Material's shape scale (extra small 4, small 8, medium 12, large 16,
+/// extra large 28, full), scaled as a whole so its medium step is the
+/// desktop's corner radius. Each component keeps its own step, so dialogs
+/// stay rounder than cards and cards rounder than menus, as the spec ranks
+/// them; full (search bar, buttons, chips' pills) stays full.
+final class ShapeScale {
+  const ShapeScale([this.factor = 1]);
+  factory ShapeScale.of(ThemeSpec? spec) => ShapeScale(spec?.radius == null ? 1 : spec!.radius! / 12);
+  final double factor;
+  double get extraSmall => 4 * factor;
+  double get small => 8 * factor;
+  double get medium => 12 * factor;
+  double get large => 16 * factor;
+  double get extraLarge => 28 * factor;
+  RoundedRectangleBorder rounded(double r) => RoundedRectangleBorder(borderRadius: BorderRadius.circular(r));
+}
+
 /// The app's theme around any scheme (a note's page uses its color's). Built
 /// whole, not copied: a copied theme keeps its old text colors. [spec] adds
-/// the desktop's font and corner radius.
+/// the desktop's font and scales the shape scale to its corner radius.
+/// Component colors are left to Material's roles; the tint scheme's surface
+/// ladder is what keeps containers apart on a black background.
 ThemeData themeFor(ColorScheme scheme, [ThemeSpec? spec]) {
   const expressive = StyleVariant.material3Expressive;
-  final radius = spec?.radius;
-  final corners = radius == null ? null : RoundedRectangleBorder(borderRadius: BorderRadius.circular(radius));
+  final shapes = ShapeScale.of(spec);
   return ThemeData(
     colorScheme: scheme,
     fontFamily: spec?.font,
-    searchBarTheme: corners == null ? null : SearchBarThemeData(shape: WidgetStatePropertyAll(corners)),
-    floatingActionButtonTheme: corners == null ? null : FloatingActionButtonThemeData(shape: corners),
+    floatingActionButtonTheme: FloatingActionButtonThemeData(shape: shapes.rounded(shapes.large)),
     iconButtonTheme: const IconButtonThemeData(variant: expressive),
     elevatedButtonTheme: const ElevatedButtonThemeData(variant: expressive),
     pageTransitionsTheme: PageTransitionsTheme(
       builders: {for (final p in TargetPlatform.values) p: const FadeForwardsPageTransitionsBuilder()},
     ),
-    inputDecorationTheme: const InputDecorationTheme(border: InputBorder.none),
-    cardTheme: CardThemeData(margin: EdgeInsets.zero, clipBehavior: Clip.antiAlias, shape: corners),
-    dialogTheme: corners == null ? null : DialogThemeData(shape: corners),
-    // sheets and menus a step above the page, so they read on a black one
-    bottomSheetTheme: BottomSheetThemeData(backgroundColor: scheme.surfaceContainerHigh),
-    menuTheme: MenuThemeData(style: MenuStyle(backgroundColor: WidgetStatePropertyAll(scheme.surfaceContainerHigh))),
+    cardTheme: CardThemeData(
+      margin: EdgeInsets.zero,
+      clipBehavior: Clip.antiAlias,
+      shape: shapes.rounded(shapes.medium),
+    ),
+    dialogTheme: DialogThemeData(shape: shapes.rounded(shapes.extraLarge)),
+    bottomSheetTheme: BottomSheetThemeData(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(shapes.extraLarge))),
+    ),
+    snackBarTheme: SnackBarThemeData(shape: shapes.rounded(shapes.extraSmall)),
+    menuTheme: MenuThemeData(style: MenuStyle(shape: WidgetStatePropertyAll(shapes.rounded(shapes.extraSmall)))),
+    // top app bars: surface, and surface container once content scrolls
+    // under them (the spec's on-scroll color, rather than a tint)
+    appBarTheme: AppBarThemeData(
+      backgroundColor: WidgetStateColor.resolveWith(
+        (s) => s.contains(WidgetState.scrolledUnder) ? scheme.surfaceContainer : scheme.surface,
+      ),
+      scrolledUnderElevation: 0,
+    ),
+    chipTheme: ChipThemeData(shape: shapes.rounded(shapes.small)),
+    // the 2024 progress indicators: a gap between track and indicator, and
+    // the stop dot
+    // (the flag is deprecated only because false becomes the default)
+    // ignore: deprecated_member_use
+    progressIndicatorTheme: const ProgressIndicatorThemeData(year2023: false),
   );
 }
 

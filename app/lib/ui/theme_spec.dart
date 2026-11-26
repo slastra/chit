@@ -69,11 +69,15 @@ final class ThemeSpec {
       surface: bg,
       onSurface: fg,
       onSurfaceVariant: step(0.66),
+      // Material's dark ladder climbs about 4, 6, 11 and 16 tones above the
+      // page; the desktop's own surface and container sit on its first two
+      // steps (sheets and menus), so those read on a black page as they do
+      // on the desktop, and the higher steps (search bar, dialogs) clear it.
       surfaceContainerLowest: bg,
       surfaceContainerLow: surface ?? step(0.04),
-      surfaceContainer: step(0.06),
-      surfaceContainerHigh: container ?? step(0.09),
-      surfaceContainerHighest: step(0.13),
+      surfaceContainer: container ?? step(0.08),
+      surfaceContainerHigh: step(0.13),
+      surfaceContainerHighest: step(0.18),
       // Material's outline variant is the hairline (card borders, dividers):
       // the theme's own outline. The stronger outline (text-field borders)
       // sits well above it, or outlined cards vanish on a black background.

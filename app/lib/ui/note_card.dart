@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../core/protocol.dart';
@@ -47,7 +48,7 @@ class NoteCard extends ConsumerWidget {
         children: [
           // content: title, then the text or the open items
           Padding(
-            padding: EdgeInsets.fromLTRB(14, 14, 14, hasFooter ? 10 : 14),
+            padding: EdgeInsets.fromLTRB(16, 16, 16, hasFooter ? 12 : 16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               spacing: 6,
@@ -59,7 +60,7 @@ class NoteCard extends ConsumerWidget {
                       Expanded(
                         child: Text(
                           note.label.isEmpty ? 'Empty note' : note.label,
-                          style: text.titleMedium?.copyWith(color: ink, fontWeight: FontWeight.w600),
+                          style: text.titleMedium?.copyWith(color: ink),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -85,13 +86,18 @@ class NoteCard extends ConsumerWidget {
           if (hasFooter) ...[
             Divider(height: 1, thickness: 1, color: rule),
             Padding(
-              padding: const EdgeInsets.fromLTRB(10, 8, 14, 8),
+              padding: const EdgeInsets.fromLTRB(12, 8, 16, 8),
               child: Wrap(
-                spacing: 10,
-                runSpacing: 6,
+                spacing: 8,
+                runSpacing: 8,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  if (reminder.isNotEmpty) _ReminderChip(label: _when(context, reminder), scheme: scheme),
+                  if (reminder.isNotEmpty)
+                    _ReminderChip(
+                      label: _when(context, reminder),
+                      scheme: scheme,
+                      onPressed: () => context.push('/note/${note.id}'),
+                    ),
                   if (note.isList && more > 0) _Mark(label: '$more more', ink: faint),
                   if (note.isList && done > 0) _Mark(icon: Icons.check, label: '$done checked', ink: faint),
                   if (files.isNotEmpty) _Mark(icon: Icons.attach_file, label: '${files.length}', ink: faint),
@@ -126,13 +132,20 @@ class NoteCard extends ConsumerWidget {
     engine.edit([engine.op(Collections.items, it.id, 'checked', true)]);
   }
 
+  /// A reminder as a chip can show it on a phone-width card: "Today 9 AM",
+  /// "Fri 9:30 AM" within the week, then "Dec 4 9 AM".
   static String _when(BuildContext context, String s) {
     final d = DateTime.tryParse(s.replaceFirst(' ', 'T'))?.toLocal();
     if (d == null) return '';
-    final day = DateUtils.isSameDay(d, DateTime.now())
+    final now = DateTime.now();
+    final days = DateUtils.dateOnly(d).difference(DateUtils.dateOnly(now)).inDays;
+    final day = days == 0
         ? 'Today'
-        : MaterialLocalizations.of(context).formatShortMonthDay(d);
-    return '$day ${TimeOfDay.fromDateTime(d).format(context)}';
+        : days > 0 && days < 7
+        ? DateFormat.E().format(d)
+        : DateFormat.MMMd().format(d);
+    final time = d.minute == 0 ? DateFormat.j().format(d) : DateFormat.jm().format(d);
+    return '$day $time';
   }
 }
 
@@ -193,31 +206,24 @@ class _Mark extends StatelessWidget {
   }
 }
 
-/// A reminder, as a small tonal chip (Material's assist-chip look, sized for
-/// a card): it is state on the note, not just a caption.
+/// A reminder, as Material's assist chip (Flutter's ActionChip: 32dp, small
+/// corners, an 18dp icon, a hairline outline): it opens the note, where the
+/// reminder is set. On a colored note it takes that color's ink.
 class _ReminderChip extends StatelessWidget {
-  const _ReminderChip({required this.label, required this.scheme});
+  const _ReminderChip({required this.label, required this.scheme, required this.onPressed});
   final String label;
   final ColorScheme? scheme;
+  final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
-    final cs = scheme ?? Theme.of(context).colorScheme;
-    final bg = scheme == null ? cs.secondaryContainer : cs.onPrimaryContainer.withValues(alpha: 0.12);
-    final fg = scheme == null ? cs.onSecondaryContainer : cs.onPrimaryContainer;
-    return DecoratedBox(
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8)),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          spacing: 4,
-          children: [
-            Icon(Icons.alarm, size: 14, color: fg),
-            Text(label, style: Theme.of(context).textTheme.labelMedium?.copyWith(color: fg)),
-          ],
-        ),
-      ),
+    final cs = scheme;
+    return ActionChip(
+      avatar: Icon(Icons.alarm, color: cs?.onPrimaryContainer),
+      label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+      labelStyle: cs == null ? null : TextStyle(color: cs.onPrimaryContainer),
+      side: cs == null ? null : BorderSide(color: cs.onPrimaryContainer.withValues(alpha: 0.3)),
+      onPressed: onPressed,
     );
   }
 }

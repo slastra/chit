@@ -16,7 +16,11 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   final _server = TextEditingController(text: 'https://chit.lastra.us');
   final _email = TextEditingController();
   final _password = TextEditingController();
+  // Errors show as the failing field's supporting text, Material's place
+  // for them: a refused sign-in under the password, an unreachable server
+  // under the server field (which opens to show it).
   String? _error;
+  String? _serverError;
   bool _busy = false;
 
   @override
@@ -31,6 +35,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     setState(() {
       _busy = true;
       _error = null;
+      _serverError = null;
     });
     try {
       await ref.read(sessionProvider.notifier).signIn(_server.text.trim(), _email.text, _password.text);
@@ -38,7 +43,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     } on ApiError catch (e) {
       setState(() => _error = e.message);
     } catch (_) {
-      setState(() => _error = "Can't reach that server.");
+      setState(() {
+        _changeServer = true;
+        _serverError = "Can't reach this server";
+      });
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -50,15 +58,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    InputDecoration field(String label, IconData icon) => InputDecoration(
-      labelText: label,
-      prefixIcon: Icon(icon),
-      filled: true,
-      border: const OutlineInputBorder(
-        borderSide: BorderSide.none,
-        borderRadius: BorderRadius.all(Radius.circular(12)),
-      ),
-    );
+    // Material's filled text field, as the spec draws it (container, top
+    // corners, active indicator); errors in its supporting text
+    InputDecoration field(String label, IconData icon, [String? error]) =>
+        InputDecoration(labelText: label, prefixIcon: Icon(icon), filled: true, errorText: error);
     return Scaffold(
       body: Center(
         child: SingleChildScrollView(
@@ -98,7 +101,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                             padding: const EdgeInsets.only(bottom: 12),
                             child: TextField(
                               controller: _server,
-                              decoration: field('Server', Icons.dns_outlined),
+                              decoration: field('Server', Icons.dns_outlined, _serverError),
                               keyboardType: TextInputType.url,
                               onChanged: (_) => setState(() {}),
                             ),
@@ -115,29 +118,24 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                   const SizedBox(height: 12),
                   TextField(
                     controller: _password,
-                    decoration: field('Password', Icons.key_outlined),
+                    decoration: field('Password', Icons.key_outlined, _error),
                     obscureText: true,
                     autofillHints: const [AutofillHints.password],
                     onSubmitted: (_) => _signIn(),
                   ),
-                  if (_error case final e?) ...[
-                    const SizedBox(height: 12),
-                    Row(
-                      spacing: 8,
-                      children: [
-                        Icon(Icons.error_outline, size: 20, color: scheme.error),
-                        Expanded(
-                          child: Text(e, style: TextStyle(color: scheme.error)),
-                        ),
-                      ],
-                    ),
-                  ],
                   const SizedBox(height: 24),
                   FilledButton(
-                    style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+                    // Expressive medium button: 56dp, title-medium label
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(56),
+                      textStyle: theme.textTheme.titleMedium,
+                    ),
                     onPressed: _busy ? null : _signIn,
                     child: _busy
-                        ? const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                        ? SizedBox.square(
+                            dimension: 24,
+                            child: CircularProgressIndicator(strokeWidth: 3, color: scheme.onPrimary),
+                          )
                         : const Text('Sign in'),
                   ),
                   const SizedBox(height: 8),

@@ -73,19 +73,12 @@ class _DialogPage extends Page<void> {
     settings: this,
     builder: (context) {
       final size = MediaQuery.sizeOf(context);
-      final theme = Theme.of(context);
-      final radius = theme.dialogTheme.shape is RoundedRectangleBorder
-          ? (theme.dialogTheme.shape! as RoundedRectangleBorder).borderRadius
-          : const BorderRadius.all(Radius.circular(28));
+      // the editor as a basic dialog: Material's large-screen form of a
+      // full-screen dialog, at most 560dp wide, in its theme shape and color
       return Dialog(
         clipBehavior: Clip.antiAlias,
-        // a hairline edge, so the dialog holds its shape on a black board
-        shape: RoundedRectangleBorder(
-          borderRadius: radius,
-          side: BorderSide(color: theme.colorScheme.outlineVariant),
-        ),
         insetPadding: const EdgeInsets.all(32),
-        child: SizedBox(width: 720, height: (size.height - 96).clamp(320, 820), child: child),
+        child: SizedBox(width: 560, height: (size.height - 96).clamp(320, 820), child: child),
       );
     },
   );

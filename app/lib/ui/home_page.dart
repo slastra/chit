@@ -104,11 +104,10 @@ class _HomePageState extends ConsumerState<HomePage> {
             child: SearchBar(
               hintText: _shelf == Shelf.notes ? 'Search your notes' : 'Search ${_shelf.label.toLowerCase()}',
               elevation: const WidgetStatePropertyAll(0),
-              backgroundColor: WidgetStatePropertyAll(theme.colorScheme.surfaceContainerHigh),
               leading: wide
                   ? Padding(
                       padding: const EdgeInsets.all(8),
-                      child: Icon(Icons.search, color: theme.colorScheme.onSurfaceVariant),
+                      child: Icon(Icons.search, color: theme.colorScheme.onSurface),
                     )
                   : IconButton(
                       icon: const Icon(Icons.menu),
@@ -188,9 +187,10 @@ class _Drawer extends ConsumerWidget {
         if (!docked) Navigator.of(context).pop();
       },
       children: [
+        // the drawer's headline: title small, on surface variant
         Padding(
-          padding: const EdgeInsets.fromLTRB(28, 20, 16, 16),
-          child: Text('chit', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600)),
+          padding: const EdgeInsets.fromLTRB(28, 16, 16, 10),
+          child: Text('chit', style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
         ),
         for (final s in Shelf.values)
           NavigationDrawerDestination(icon: Icon(s.icon), selectedIcon: Icon(s.selectedIcon), label: Text(s.label)),

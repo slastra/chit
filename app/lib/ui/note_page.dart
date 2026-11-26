@@ -276,19 +276,16 @@ class _NotePageState extends ConsumerState<NotePage> {
     }
 
     final appTheme = Theme.of(context);
-    // in a dialog, an uncolored note sits on Material's dialog surface
-    final base = widget.inDialog
-        ? appTheme.copyWith(
-            colorScheme: appTheme.colorScheme.copyWith(surface: appTheme.colorScheme.surfaceContainerHigh),
-          )
+    final spec = ref.watch(themeSpecProvider).value;
+    final scheme = noteScheme(note?.color ?? '', appTheme.brightness);
+    // Rebuilt whole (themeFor), never copied, so component themes such as
+    // the app bar's follow the page's surface. In a dialog an uncolored note
+    // sits on Material's dialog container; a colored one on its color.
+    final theme = scheme != null
+        ? themeFor(scheme.copyWith(surface: scheme.primaryContainer, onSurface: scheme.onPrimaryContainer), spec)
+        : widget.inDialog
+        ? themeFor(appTheme.colorScheme.copyWith(surface: appTheme.colorScheme.surfaceContainerHigh), spec)
         : appTheme;
-    final scheme = noteScheme(note?.color ?? '', base.brightness);
-    final theme = scheme == null
-        ? base
-        : themeFor(
-            scheme.copyWith(surface: scheme.primaryContainer, onSurface: scheme.onPrimaryContainer),
-            ref.watch(themeSpecProvider).value,
-          );
     final text = theme.textTheme;
 
     Widget itemRow(Item it) => _ItemRow(
@@ -348,8 +345,6 @@ class _NotePageState extends ConsumerState<NotePage> {
       child: Scaffold(
         backgroundColor: theme.colorScheme.surface,
         appBar: AppBar(
-          backgroundColor: theme.colorScheme.surface,
-          scrolledUnderElevation: 0,
           leading: widget.inDialog
               ? IconButton(tooltip: 'Close', icon: const Icon(Icons.close), onPressed: () => context.pop())
               : null,
@@ -405,7 +400,7 @@ class _NotePageState extends ConsumerState<NotePage> {
                       controller: _title,
                       focusNode: _titleFocus,
                       style: text.titleLarge,
-                      decoration: const InputDecoration(hintText: 'Title'),
+                      decoration: const InputDecoration(hintText: 'Title', border: InputBorder.none),
                       textInputAction: TextInputAction.next,
                       textCapitalization: TextCapitalization.sentences,
                       onChanged: (v) => _later('title', () => _setNote('title', v)),
@@ -418,7 +413,7 @@ class _NotePageState extends ConsumerState<NotePage> {
                         controller: _body,
                         focusNode: _bodyFocus,
                         style: text.bodyLarge,
-                        decoration: const InputDecoration(hintText: 'Note'),
+                        decoration: const InputDecoration(hintText: 'Note', border: InputBorder.none),
                         maxLines: null,
                         minLines: 6,
                         keyboardType: TextInputType.multiline,
@@ -457,6 +452,7 @@ class _NotePageState extends ConsumerState<NotePage> {
         ),
         bottomNavigationBar: _NoteBar(
           isList: isList,
+          inDialog: widget.inDialog,
           color: note?.color ?? '',
           edited: note?.updated ?? '',
           onToggleList: () => _convert(note, items),
@@ -531,7 +527,7 @@ class _ItemRowState extends State<_ItemRow> {
                   decoration: it.checked ? TextDecoration.lineThrough : null,
                   color: it.checked ? theme.colorScheme.onSurfaceVariant : null,
                 ),
-                decoration: const InputDecoration(hintText: 'List item', isDense: true),
+                decoration: const InputDecoration(hintText: 'List item', isDense: true, border: InputBorder.none),
                 textInputAction: TextInputAction.next,
                 textCapitalization: TextCapitalization.sentences,
                 onChanged: widget.onChanged,
@@ -554,17 +550,20 @@ class _ItemRowState extends State<_ItemRow> {
   }
 }
 
-/// Along the bottom: switch note and checklist, the color sheet, and when
-/// the note was last edited.
+/// Along the bottom, as Material 3 Expressive's docked toolbar (64dp,
+/// surface container, 16dp ends): switch note and checklist, the color
+/// choice, and when the note was last edited.
 class _NoteBar extends StatelessWidget {
   const _NoteBar({
     required this.isList,
+    required this.inDialog,
     required this.color,
     required this.edited,
     required this.onToggleList,
     required this.onColor,
   });
   final bool isList;
+  final bool inDialog;
   final String color;
   final String edited;
   final VoidCallback onToggleList;
@@ -575,8 +574,12 @@ class _NoteBar extends StatelessWidget {
     final theme = Theme.of(context);
     final when = DateTime.tryParse(edited.replaceFirst(' ', 'T'))?.toLocal();
     return BottomAppBar(
-      color: theme.colorScheme.surface,
+      // inside a dialog it sits on the dialog's own container, as a dialog's
+      // actions do, rather than a darker band across its foot
+      color: inDialog ? theme.colorScheme.surface : theme.colorScheme.surfaceContainer,
+      elevation: 0,
       height: 64,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: [
           IconButton(
@@ -600,7 +603,16 @@ class _NoteBar extends StatelessWidget {
                   padding: const EdgeInsets.all(12),
                   child: SizedBox(
                     width: 348, // two rows of six
-                    child: _Swatches(current: color, onPick: onColor),
+                    // a menu closes once a choice is made
+                    child: Builder(
+                      builder: (context) => _Swatches(
+                        current: color,
+                        onPick: (c) {
+                          onColor(c);
+                          MenuController.maybeOf(context)?.close();
+                        },
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -621,7 +633,6 @@ class _NoteBar extends StatelessWidget {
               'Edited ${_when(context, when)}',
               style: theme.textTheme.labelMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
             ),
-          const SizedBox(width: 12),
         ],
       ),
     );
@@ -695,7 +706,8 @@ class _Swatch extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = noteScheme(name, theme.brightness);
-    final fill = scheme?.primaryContainer ?? theme.colorScheme.surface;
+    // "Default" is no color: an empty ring, whatever color the note has now
+    final fill = scheme?.primaryContainer ?? Colors.transparent;
     final ink = scheme?.onPrimaryContainer ?? theme.colorScheme.onSurface;
     final label = name.isEmpty ? 'Default' : '${name[0].toUpperCase()}${name.substring(1)}';
     return Tooltip(
