@@ -7,6 +7,7 @@ import '../core/protocol.dart';
 import '../data/replica.dart';
 import '../data/sync.dart';
 import '../state/providers.dart';
+import 'brand.dart';
 import 'create.dart';
 import 'masonry.dart';
 import 'note_card.dart';
@@ -187,10 +188,17 @@ class _Drawer extends ConsumerWidget {
         if (!docked) Navigator.of(context).pop();
       },
       children: [
-        // the drawer's headline: title small, on surface variant
+        // the drawer's headline (title small, on surface variant), led by
+        // the mark in primary
         Padding(
-          padding: const EdgeInsets.fromLTRB(28, 16, 16, 10),
-          child: Text('chit', style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+          padding: const EdgeInsets.fromLTRB(24, 16, 16, 10),
+          child: Row(
+            spacing: 8,
+            children: [
+              const ChitMark(size: 24, semanticLabel: null),
+              Text('chit', style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+            ],
+          ),
         ),
         for (final s in Shelf.values)
           NavigationDrawerDestination(icon: Icon(s.icon), selectedIcon: Icon(s.selectedIcon), label: Text(s.label)),

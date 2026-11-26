@@ -14,6 +14,7 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_riverpod: ^3.5.0
+  flutter_svg: ^2.5.1
   go_router: ^18.1.4
   http: ^1.6.0
   intl: ^0.20.3
@@ -30,3 +31,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/brand/

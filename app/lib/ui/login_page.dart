@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../data/api.dart';
 import '../state/providers.dart';
+import 'brand.dart';
 
 class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({super.key});
@@ -72,19 +73,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // the brand mark: an Expressive shape around the note glyph
-                  Center(
-                    child: DecoratedBox(
-                      decoration: ShapeDecoration(
-                        color: scheme.primaryContainer,
-                        shape: MaterialShapeBorder(shape: MaterialShapes.sunny),
-                      ),
-                      child: SizedBox.square(
-                        dimension: 96,
-                        child: Icon(Icons.sticky_note_2_outlined, size: 44, color: scheme.onPrimaryContainer),
-                      ),
-                    ),
-                  ),
+                  // the app icon's tonal tile, in a rounded square like the icon
+                  const Center(child: ChitTile(size: 96)),
                   const SizedBox(height: 20),
                   Text('Sign in to chit', textAlign: TextAlign.center, style: theme.textTheme.headlineSmall),
                   const SizedBox(height: 4),

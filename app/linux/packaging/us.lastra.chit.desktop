@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=chit
+GenericName=Notes
+Comment=Shared notes and lists for the household
+Exec=chit
+Icon=us.lastra.chit
+StartupWMClass=us.lastra.chit
+Categories=Utility;
+Keywords=lists;checklist;reminders;keep;
+Terminal=false

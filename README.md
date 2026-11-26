@@ -97,6 +97,23 @@ from `accent`, and the rest is laid over them exactly:
 Without it the app uses the platform's colors (Material You on Android) or its
 own. Note colors stay the same ten hues everywhere, since notes are shared.
 
+### Icon and mark
+
+The mark's masters are `app/assets/brand/chit-{full,icon,tiny}.svg`: one
+drawing in three cuts (full face from 64px, the icon cut from 32px, eye dots
+and smile below that), its face cut out of the body so it takes any color.
+The app draws it from the color scheme. `app/tool/brand.py` regenerates every
+platform icon from them (the tonal treatment: on-primary-container on a
+primary-container tile, in chit's default colors), including Android's
+monochrome layer, which Android 13+ themes from the wallpaper.
+
+On Linux, `app/tool/install-linux.sh` builds the app and installs it for the
+current user with a launcher entry and the icon. To have the icon follow a
+desktop scheme, have the theme tool render
+`app/linux/packaging/tint-chit-icon.svg` (a tint template; its `{{accent}}`
+and `{{background}}` are the only inputs) to
+`~/.local/share/icons/hicolor/scalable/apps/us.lastra.chit.svg`.
+
 ## How it works
 
 The server embeds [PocketBase](https://pocketbase.io) for accounts, the admin UI, files
