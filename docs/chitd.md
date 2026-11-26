@@ -104,7 +104,7 @@ lastshell's note panel sends a draft: `{title, body, list, files: [paths], color
 - Otherwise it is a new note with that title and body, in `color`, pinned if `pinned`.
   Choosing a color or a pin turns the quick grammar off: it is a note being made.
 
-Files are checked first (a regular file, 25 MB at most). On `compose` each is copied to
+Files are checked first (a regular file, 250 MB at most). On `compose` each is copied to
 `$XDG_DATA_HOME/chit/uploads/<id>/<name>` and shows in the replica at once as a pending
 attachment. Uploads start once the outbox is empty, so the note exists on the server
 first, and retry until they land. A file the server refuses for good (too big, note gone)

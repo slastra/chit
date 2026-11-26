@@ -6,9 +6,9 @@ import (
 	"github.com/pocketbase/pocketbase/tools/types"
 )
 
-// MaxAttachmentSize stays under PocketBase's default 32 MB request body
-// limit, so uploads need no route-specific override.
-const MaxAttachmentSize = 25 << 20
+// The limit this migration first set; 1795651204 raised it to
+// protocol.MaxAttachmentSize. Applied migrations keep their own values.
+const firstAttachmentLimit = 25 << 20
 
 // attachments are files on a note. The file is protected: downloading it
 // takes a short-lived file token, and the view rule (can see the note)
@@ -23,7 +23,7 @@ func init() {
 		c.Fields.Add(
 			&core.RelationField{Name: "note", CollectionId: notes.Id, MaxSelect: 1, Required: true, CascadeDelete: true},
 			&core.FileField{
-				Name: "file", MaxSelect: 1, MaxSize: MaxAttachmentSize, Required: true, Protected: true,
+				Name: "file", MaxSelect: 1, MaxSize: firstAttachmentLimit, Required: true, Protected: true,
 				Thumbs: []string{"320x320", "1080x0"},
 			},
 			&core.TextField{Name: "name", Max: 500},

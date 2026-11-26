@@ -14,7 +14,7 @@ import (
 )
 
 // maxUpload matches the server's attachment limit.
-const maxUpload = 25 << 20
+const maxUpload = protocol.MaxAttachmentSize
 
 func humanSize(n int64) string {
 	switch {
@@ -29,7 +29,7 @@ func humanSize(n int64) string {
 func attachCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "attach <note> <file>...",
-		Short: "Attach files to a note (25 MB each)",
+		Short: "Attach files to a note (250 MB each)",
 		Args:  cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -55,7 +55,7 @@ func attachCmd() *cobra.Command {
 					return fmt.Errorf("%s is a directory", p)
 				}
 				if st.Size() > maxUpload {
-					return fmt.Errorf("%s is over the 25 MB limit (%d bytes)", p, st.Size())
+					return fmt.Errorf("%s is over the 250 MB limit (%d bytes)", p, st.Size())
 				}
 			}
 			var done []protocol.Attachment

@@ -12,7 +12,7 @@ import (
 )
 
 // MaxFileSize matches the server's attachment limit.
-const MaxFileSize = 25 << 20
+const MaxFileSize = protocol.MaxAttachmentSize
 
 // Draft is what the composer holds: an optional title, the body, whether
 // the body is a list (one item per line), and files to attach.

@@ -157,7 +157,8 @@ Any signed-in user can list the accounts on the instance
 
 Files on a note live in the `attachments` collection (note, file, name, size, type,
 deleted), stored by PocketBase on disk under `/pb_data/storage` (or S3/R2 if configured in
-the admin UI). The limit is 25 MB per file, under PocketBase's 32 MB request limit.
+the admin UI). The limit is 250 MB per file (`protocol.MaxAttachmentSize`); the upload route
+carries its own body limit to match, past PocketBase's default 32 MB.
 
 - **Upload:** `POST /api/chit/notes/{id}/attachments`, multipart with `file` and `id` (a
   client-generated record id). Owner and editors only. Retrying with the same `id` returns

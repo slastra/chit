@@ -28,7 +28,11 @@ func Register(app core.App) *Broker {
 		g.GET("/snapshot", handleSnapshot)
 		g.GET("/stream", func(e *core.RequestEvent) error { return handleStream(e, b) })
 		g.POST("/notes/{id}/members", func(e *core.RequestEvent) error { return handleShare(e, b) })
-		g.POST("/notes/{id}/attachments", func(e *core.RequestEvent) error { return handleAttach(e, b) })
+		// uploads get their own body limit (PocketBase's default is 32 MB):
+		// the largest attachment plus room for the multipart envelope
+		g.POST("/notes/{id}/attachments", func(e *core.RequestEvent) error { return handleAttach(e, b) }).
+			Unbind(apis.DefaultBodyLimitMiddlewareId).
+			Bind(apis.BodyLimit(protocol.MaxAttachmentSize + 1<<20))
 		g.DELETE("/notes/{id}/members/{user}", func(e *core.RequestEvent) error { return handleUnshare(e, b) })
 		return se.Next()
 	})

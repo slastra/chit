@@ -132,6 +132,9 @@ type Label struct {
 // Attachment is a file on a note. File is the stored filename; download it
 // from /api/files/attachments/{ID}/{File}?token=<file token>, adding
 // &thumb=320x320 or &thumb=1080x0 for an image preview.
+// MaxAttachmentSize is the largest file an attachment may hold, 250 MB.
+const MaxAttachmentSize int64 = 250 << 20
+
 type Attachment struct {
 	ID      string `json:"id"`
 	Note    string `json:"note"`

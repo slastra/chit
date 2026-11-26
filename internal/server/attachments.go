@@ -2,6 +2,7 @@ package server
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"mime"
 	"net/http"
@@ -88,6 +89,12 @@ func contentType(f *filesystem.File) string {
 // handleAttach takes a multipart upload: "file" plus an "id" field.
 func handleAttach(e *core.RequestEvent, b *Broker) error {
 	files, err := e.FindUploadedFiles("file")
+	// a body past the route's limit fails mid-parse when it came without a
+	// Content-Length (with one, the limit refuses it before this runs)
+	if errors.Is(err, apis.ErrRequestEntityTooLarge) {
+		return e.Error(http.StatusRequestEntityTooLarge,
+			fmt.Sprintf("files can be at most %d MB", protocol.MaxAttachmentSize>>20), nil)
+	}
 	if err != nil || len(files) != 1 {
 		return apis.NewBadRequestError("send exactly one file in the \"file\" field", nil)
 	}

@@ -14,7 +14,7 @@ attachments, a live change feed, and `chitd`, the desktop daemon. The apps are n
 ## Features
 
 - Text notes and checklists, with colors, pins, labels, archive and trash
-- Attachments up to 25 MB, with image thumbnails, visible only to people on the note
+- Attachments up to 250 MB, with image thumbnails, visible only to people on the note
 - Sharing per note with other accounts on the server, as editor or viewer
 - Offline-first: every device keeps a replica and merges by field
 - Reminders scheduled on each device, with no push service in the middle
@@ -56,7 +56,7 @@ chit ls                                  # --archived, --trashed
 chit pin groceries
 chit people
 chit share groceries angelica            # --viewer for read-only
-chit attach groceries receipt.jpg        # files up to 25 MB
+chit attach groceries receipt.jpg        # files up to 250 MB
 chit get groceries receipt               # download (-o PATH, --thumb 320x320)
 chit detach groceries receipt
 chit remind groceries 17:30              # 10m, 2h, "tomorrow 9:00"; --clear
