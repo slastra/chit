@@ -10,6 +10,7 @@ import '../data/replica.dart';
 import '../data/sync.dart';
 import '../state/providers.dart';
 import 'note_colors.dart';
+import 'app.dart' show themeSpecProvider;
 import 'theme.dart';
 
 /// One note, open or new. Edits save as you pause (and work offline). A new
@@ -212,7 +213,9 @@ class _NotePageState extends ConsumerState<NotePage> {
 
     final base = Theme.of(context);
     final scheme = noteScheme(note?.color ?? '', base.brightness);
-    final theme = scheme == null ? base : themeFor(scheme.copyWith(surface: scheme.primaryContainer, onSurface: scheme.onPrimaryContainer));
+    final theme = scheme == null
+        ? base
+        : themeFor(scheme.copyWith(surface: scheme.primaryContainer, onSurface: scheme.onPrimaryContainer), ref.watch(themeSpecProvider).value);
     final text = theme.textTheme;
 
     Widget itemRow(Item it) => Padding(

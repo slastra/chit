@@ -82,6 +82,21 @@ capture grammar are in [docs/chitd.md](docs/chitd.md).
 token refreshes itself when it is within three days of expiring. `"activity_toasts": false`
 turns off chitd's toasts for other people's edits.
 
+### Desktop theme
+
+The app's desktop build reads an optional `~/.config/chit/theme.json` and
+recolors live when it changes. Every field is optional; Material's tones come
+from `accent`, and the rest is laid over them exactly:
+
+```json
+{"brightness": "dark", "accent": "#bebeda", "background": "#000000",
+ "foreground": "#cdcdcd", "surface": "#080808", "container": "#121212",
+ "outline": "#292929", "error": "#e08398", "font": "Martian Grotesk", "radius": 8}
+```
+
+Without it the app uses the platform's colors (Material You on Android) or its
+own. Note colors stay the same ten hues everywhere, since notes are shared.
+
 ## How it works
 
 The server embeds [PocketBase](https://pocketbase.io) for accounts, the admin UI, files

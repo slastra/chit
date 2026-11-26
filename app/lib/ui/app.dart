@@ -9,6 +9,11 @@ import 'home_page.dart';
 import 'login_page.dart';
 import 'note_page.dart';
 import 'theme.dart';
+import 'theme_file.dart';
+import 'theme_spec.dart';
+
+/// The desktop theme file, live (null: none, or on the web and phones).
+final themeSpecProvider = StreamProvider<ThemeSpec?>((ref) => watchThemeSpec());
 
 final _router = Provider<GoRouter>((ref) {
   final refresh = ValueNotifier(0);
@@ -42,12 +47,14 @@ class ChitApp extends ConsumerWidget {
     ref.listen(syncStatusProvider, (_, next) {
       if (next.value?.phase == SyncPhase.signedOut) ref.read(sessionProvider.notifier).signOut();
     });
+    final spec = ref.watch(themeSpecProvider).value;
     return DynamicColorBuilder(
       builder: (light, dark) => MaterialApp.router(
         title: 'chit',
         debugShowCheckedModeBanner: false,
-        theme: buildTheme(light, Brightness.light),
-        darkTheme: buildTheme(dark, Brightness.dark),
+        // a theme file decides light or dark itself
+        theme: spec != null ? buildTheme(null, spec.brightness, spec) : buildTheme(light, Brightness.light),
+        darkTheme: spec != null ? buildTheme(null, spec.brightness, spec) : buildTheme(dark, Brightness.dark),
         routerConfig: ref.watch(_router),
       ),
     );
