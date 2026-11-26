@@ -8,6 +8,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../core/order.dart';
 import '../core/protocol.dart';
+import '../core/reminders.dart';
 import '../core/roles.dart';
 import '../data/local_files.dart' show clipboardImage;
 import '../data/media.dart';
@@ -18,6 +19,7 @@ import 'note_colors.dart';
 import 'app.dart' show themeSpecProvider;
 import 'attachments.dart';
 import 'check_motion.dart';
+import 'reminder_picker.dart';
 import 'share_sheet.dart';
 import 'feedback.dart';
 import 'home_page.dart' show isExpanded;
@@ -189,6 +191,14 @@ class _NotePageState extends ConsumerState<NotePage> {
   void _setNote(String field, Object? value) => _edit(() => [_op(Collections.notes, _id, field, value)]);
   void _setState(String field, Object? value) => _edit(() => [_op(Collections.noteState, _id, field, value)]);
 
+  /// Sets the reminder (and makes it pending again), or clears it.
+  void _remind(DateTime? at) => _edit(
+    () => [
+      _op(Collections.noteState, _id, 'reminder', at == null ? '' : reminderWire(at)),
+      _op(Collections.noteState, _id, 'reminder_done', false),
+    ],
+  );
+
   // ---- files -----------------------------------------------------------------
 
   /// Attaches files to this note, creating it first if it is new.
@@ -349,6 +359,7 @@ class _NotePageState extends ConsumerState<NotePage> {
     final role = note == null ? Role.owner : roleOf(note, members, me);
     final editable = _editable = canEdit(role);
     final shared = members.isNotEmpty || !owned;
+    final reminder = state.reminderDone ? null : reminderTime(state.reminder);
     final trashed = note?.trashed.isNotEmpty ?? false;
 
     for (final it in items) {
@@ -458,6 +469,7 @@ class _NotePageState extends ConsumerState<NotePage> {
                 icon: Icon(shared ? Icons.group_outlined : Icons.person_add_alt_outlined),
                 onPressed: () => showShareSheet(context, _id),
               ),
+            ReminderButton(current: reminder, onSet: _remind, onClear: () => _remind(null)),
             IconButton(
               tooltip: state.pinned ? 'Unpin' : 'Pin',
               isSelected: state.pinned,
@@ -586,6 +598,26 @@ class _NotePageState extends ConsumerState<NotePage> {
                                 for (final it in checked) itemRow(it),
                             ],
                           ],
+                          // a set reminder, under the text: tap to change it
+                          if (reminder != null)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: InputChip(
+                                  avatar: const Icon(Icons.alarm),
+                                  label: Text(reminderLabel(reminder)),
+                                  onPressed: () => showReminderSheet(
+                                    context,
+                                    current: reminder,
+                                    onSet: _remind,
+                                    onClear: () => _remind(null),
+                                  ),
+                                  deleteButtonTooltipMessage: 'Remove reminder',
+                                  onDeleted: () => _remind(null),
+                                ),
+                              ),
+                            ),
                           // other files below the text, each a row
                           if (others.isNotEmpty) ...[
                             const SizedBox(height: 8),

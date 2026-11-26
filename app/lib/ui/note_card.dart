@@ -4,10 +4,10 @@ import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../core/protocol.dart';
+import '../core/reminders.dart';
 import '../core/roles.dart';
 import '../data/replica.dart';
 import '../state/providers.dart';
@@ -165,7 +165,7 @@ class _NoteCardState extends ConsumerState<NoteCard> {
                           children: [
                             if (reminder.isNotEmpty)
                               _ReminderChip(
-                                label: _when(context, reminder),
+                                label: reminderLabel(reminderTime(reminder)!),
                                 scheme: scheme,
                                 onPressed: () => context.push('/note/${note.id}'),
                               ),
@@ -243,19 +243,6 @@ class _NoteCardState extends ConsumerState<NoteCard> {
 
   /// A reminder as a chip can show it on a phone-width card: "Today 9 AM",
   /// "Fri 9:30 AM" within the week, then "Dec 4 9 AM".
-  static String _when(BuildContext context, String s) {
-    final d = DateTime.tryParse(s.replaceFirst(' ', 'T'))?.toLocal();
-    if (d == null) return '';
-    final now = DateTime.now();
-    final days = DateUtils.dateOnly(d).difference(DateUtils.dateOnly(now)).inDays;
-    final day = days == 0
-        ? 'Today'
-        : days > 0 && days < 7
-        ? DateFormat.E().format(d)
-        : DateFormat.MMMd().format(d);
-    final time = d.minute == 0 ? DateFormat.j().format(d) : DateFormat.jm().format(d);
-    return '$day $time';
-  }
 }
 
 /// An open item on the card. Checked here, its box fills and its text is
