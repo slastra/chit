@@ -589,7 +589,7 @@ class _Placeable extends StatelessWidget {
 /// pinned: a dashed outline (the drop-here sign) in the card shape, a pin in
 /// a tonal circle, and what it does.
 class PinDropZone extends StatelessWidget {
-  const PinDropZone();
+  const PinDropZone({super.key});
 
   @override
   Widget build(BuildContext context) {
