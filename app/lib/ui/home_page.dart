@@ -8,6 +8,7 @@ import 'package:material_ui/material_ui.dart';
 import '../core/board_order.dart';
 import '../core/protocol.dart';
 import '../core/reminders.dart';
+import '../core/roles.dart';
 import '../data/media.dart';
 import '../data/replica.dart';
 import '../data/sync.dart';
@@ -20,6 +21,8 @@ import 'brand.dart';
 import 'create.dart';
 import 'feedback.dart';
 import 'labels_ui.dart';
+import 'note_colors.dart';
+import 'reminder_picker.dart';
 import 'masonry.dart';
 import 'note_card.dart';
 
@@ -52,6 +55,24 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   /// The label shown, on the label shelf.
   String? _label;
+
+  /// The notes selected on the board, to act on together.
+  final _selected = <String>{};
+  final _selectionFocus = FocusNode(debugLabel: 'selection');
+
+  void _toggle(String id, {bool? on}) {
+    setState(() {
+      if (on ?? !_selected.contains(id)) {
+        _selected.add(id);
+      } else {
+        _selected.remove(id);
+      }
+    });
+    // Escape and Ctrl+A act on the selection from here
+    if (_selected.isNotEmpty) _selectionFocus.requestFocus();
+  }
+
+  void _clearSelection() => setState(_selected.clear);
   String _query = '';
   final _scaffold = GlobalKey<ScaffoldState>();
   final _gridKey = GlobalKey();
@@ -76,6 +97,7 @@ class _HomePageState extends ConsumerState<HomePage> {
   @override
   void dispose() {
     _heldTimer?.cancel();
+    _selectionFocus.dispose();
     _lifecycle.dispose();
     _drag.dispose();
     super.dispose();
@@ -190,6 +212,7 @@ class _HomePageState extends ConsumerState<HomePage> {
     setState(() {
       _shelf = s;
       _label = s == Shelf.labeled ? label : null;
+      _selected.clear();
     });
     // a note made from here starts with this shelf's label or reminder
     newNoteDefaults.value = (label: _label, remind: s == Shelf.reminders);
@@ -278,11 +301,17 @@ class _HomePageState extends ConsumerState<HomePage> {
     final pinned = [for (final i in ids.pinned) byId[i]!];
     final others = [for (final i in ids.others) byId[i]!];
     final dragging = _drag.active;
+    // the selection, less anything no longer shown
+    final selected = {
+      for (final id in _selected)
+        if (byId.containsKey(id)) id,
+    };
     final wide = isExpanded(context);
     final theme = Theme.of(context);
     final firstSync = lib.notes.isEmpty && status?.phase != SyncPhase.online && status?.phase != SyncPhase.offline;
     final margin = wide ? 24.0 : 16.0;
-    final showFab = !wide && (_shelf == Shelf.notes || _shelf == Shelf.reminders || _shelf == Shelf.labeled);
+    final showFab =
+        !wide && _selected.isEmpty && (_shelf == Shelf.notes || _shelf == Shelf.reminders || _shelf == Shelf.labeled);
     // snackbars float above the compact FAB (56dp and its 16dp margin)
     snackbarClearance.value = showFab ? 56 + 16 : 0;
 
@@ -308,6 +337,11 @@ class _HomePageState extends ConsumerState<HomePage> {
             library: lib,
             onMove: canDrag ? (by) => _moveBy(n.id, by: by) : null,
             onMoveTop: canDrag ? () => _moveBy(n.id, top: true) : null,
+            selected: selected.contains(n.id),
+            selecting: selected.isNotEmpty,
+            onSelect: () => _toggle(n.id),
+            // where a long press lifts the card, lifting selects it
+            longPressSelects: !canDrag,
           ),
         ),
       ),
@@ -322,6 +356,7 @@ class _HomePageState extends ConsumerState<HomePage> {
     final grid = BoardGestures(
       drag: _drag,
       enabled: canDrag,
+      onLifted: (id) => _toggle(id, on: true),
       child: Masonry(
         key: _gridKey,
         minColumnWidth: wide ? 240 : 160,
@@ -355,40 +390,51 @@ class _HomePageState extends ConsumerState<HomePage> {
     final content = CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
-        SliverAppBar(
-          floating: true,
-          snap: true,
-          toolbarHeight: 72,
-          titleSpacing: margin,
-          automaticallyImplyLeading: false,
-          centerTitle: true,
-          title: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 720),
-            child: SearchBar(
-              hintText: switch (_shelf) {
-                Shelf.notes => 'Search your notes',
-                Shelf.labeled => 'Search ${lib.labels.where((l) => l.id == _label).firstOrNull?.name ?? 'label'}',
-                _ => 'Search ${_shelf.label.toLowerCase()}',
-              },
-              elevation: const WidgetStatePropertyAll(0),
-              leading: wide
-                  ? Padding(
-                      padding: const EdgeInsets.all(8),
-                      child: Icon(Icons.search, color: theme.colorScheme.onSurface),
-                    )
-                  : IconButton(
-                      icon: const Icon(Icons.menu),
-                      tooltip: 'Open navigation',
-                      onPressed: () => _scaffold.currentState?.openDrawer(),
-                    ),
-              trailing: const [_SyncMark(), _Account()],
-              onChanged: (v) => setState(() => _query = v),
+        if (selected.isNotEmpty)
+          // a selection: the contextual top app bar, close, count, actions
+          SliverAppBar(
+            pinned: true,
+            toolbarHeight: 64,
+            backgroundColor: theme.colorScheme.surfaceContainer,
+            leading: IconButton(tooltip: 'Clear selection', icon: const Icon(Icons.close), onPressed: _clearSelection),
+            title: Text('${selected.length} selected'),
+            actions: [..._selectionActions(lib, selected.toList(), shown, wide), const SizedBox(width: 4)],
+          )
+        else
+          SliverAppBar(
+            floating: true,
+            snap: true,
+            toolbarHeight: 72,
+            titleSpacing: margin,
+            automaticallyImplyLeading: false,
+            centerTitle: true,
+            title: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 720),
+              child: SearchBar(
+                hintText: switch (_shelf) {
+                  Shelf.notes => 'Search your notes',
+                  Shelf.labeled => 'Search ${lib.labels.where((l) => l.id == _label).firstOrNull?.name ?? 'label'}',
+                  _ => 'Search ${_shelf.label.toLowerCase()}',
+                },
+                elevation: const WidgetStatePropertyAll(0),
+                leading: wide
+                    ? Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: Icon(Icons.search, color: theme.colorScheme.onSurface),
+                      )
+                    : IconButton(
+                        icon: const Icon(Icons.menu),
+                        tooltip: 'Open navigation',
+                        onPressed: () => _scaffold.currentState?.openDrawer(),
+                      ),
+                trailing: const [_SyncMark(), _Account()],
+                onChanged: (v) => setState(() => _query = v),
+              ),
             ),
+            bottom: firstSync
+                ? const PreferredSize(preferredSize: Size.fromHeight(4), child: LinearProgressIndicator())
+                : null,
           ),
-          bottom: firstSync
-              ? const PreferredSize(preferredSize: Size.fromHeight(4), child: LinearProgressIndicator())
-              : null,
-        ),
         SliverPadding(
           padding: EdgeInsets.fromLTRB(margin, 0, margin, 120),
           // centered and capped, so a very wide screen keeps the grid together
@@ -406,7 +452,7 @@ class _HomePageState extends ConsumerState<HomePage> {
       ],
     );
 
-    return Scaffold(
+    final scaffold = Scaffold(
       key: _scaffold,
       drawer: wide ? null : _Drawer(shelf: _shelf, label: _label, onPick: _pick),
       body: SafeArea(
@@ -434,6 +480,205 @@ class _HomePageState extends ConsumerState<HomePage> {
       // the split button at the foot of the docked drawer.
       floatingActionButton: showFab ? const NewNoteFabMenu() : null,
     );
+    // while selecting, Back and Escape clear it, Ctrl+A takes every note shown
+    return PopScope(
+      canPop: selected.isEmpty,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _clearSelection();
+      },
+      child: Focus(
+        focusNode: _selectionFocus,
+        child: CallbackShortcuts(
+          bindings: {
+            if (selected.isNotEmpty) ...{
+              const SingleActivator(LogicalKeyboardKey.escape): _clearSelection,
+              const SingleActivator(LogicalKeyboardKey.keyA, control: true): () =>
+                  setState(() => _selected.addAll(shown.map((n) => n.id))),
+            },
+          },
+          child: scaffold,
+        ),
+      ),
+    );
+  }
+
+  // ---- acting on the selection ----------------------------------------------
+
+  /// Sends [ops] for the selection; [skipped] notes (shared ones this person
+  /// may not change that way) are named in a message.
+  void _apply(List<Op> ops, {int skipped = 0}) {
+    final engine = ref.read(engineProvider);
+    if (engine != null && ops.isNotEmpty) unawaited(engine.edit(ops));
+    if (skipped > 0) {
+      showMessage(
+        skipped == 1 ? "1 note shared with you wasn't changed" : "$skipped notes shared with you weren't changed",
+      );
+    }
+  }
+
+  Op _op(String collection, String id, String field, Object? value) =>
+      ref.read(engineProvider)!.op(collection, id, field, value);
+
+  /// The contextual bar's actions for [ids]. Compact windows keep three
+  /// in the bar (Material's top app bar limit) and the rest under More.
+  List<Widget> _selectionActions(Library lib, List<String> ids, List<Note> shown, bool wide) {
+    if (ref.read(engineProvider) == null) return const [];
+    final me = ref.read(sessionProvider).value?.user.id ?? '';
+    final notes = [for (final id in ids) lib.notes.firstWhere((n) => n.id == id)];
+    final owned = [
+      for (final n in notes)
+        if (n.owner == me) n.id,
+    ];
+    final editable = [
+      for (final n in notes)
+        if (canEdit(roleOf(n, lib.members[n.id] ?? const <Member>[], me))) n.id,
+    ];
+    final n = ids.length;
+    String count(String what) => n == 1 ? '1 note $what' : '$n notes $what';
+
+    if (_shelf == Shelf.trash) {
+      return [
+        IconButton(
+          tooltip: 'Restore',
+          icon: const Icon(Icons.restore_from_trash_outlined),
+          onPressed: () {
+            _apply([for (final id in owned) _op(Collections.notes, id, 'trashed', '')], skipped: n - owned.length);
+            _clearSelection();
+          },
+        ),
+        IconButton(
+          tooltip: 'Delete forever',
+          icon: const Icon(Icons.delete_forever_outlined),
+          onPressed: () async {
+            final ok = await showDialog<bool>(
+              context: context,
+              builder: (context) => AlertDialog(
+                icon: const Icon(Icons.delete_forever_outlined),
+                title: Text(n == 1 ? 'Delete this note forever?' : 'Delete $n notes forever?'),
+                content: const Text('They go from every device, for everyone they are shared with.'),
+                actions: [
+                  TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+                  TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
+                ],
+              ),
+            );
+            if (ok != true) return;
+            _apply([for (final id in owned) _op(Collections.notes, id, 'deleted', true)], skipped: n - owned.length);
+            _clearSelection();
+          },
+        ),
+      ];
+    }
+
+    final allPinned = ids.every((id) => lib.stateOf(id).pinned);
+    final allArchived = ids.every((id) => lib.stateOf(id).archived);
+    final colors = {for (final x in notes) x.color};
+    final color = colors.length == 1 ? colors.first : '';
+
+    void pin() {
+      _apply([for (final id in ids) _op(Collections.noteState, id, 'pinned', !allPinned)]);
+      _clearSelection();
+    }
+
+    void archive() {
+      final was = {for (final id in ids) id: lib.stateOf(id).archived};
+      _apply([for (final id in ids) _op(Collections.noteState, id, 'archived', !allArchived)]);
+      _clearSelection();
+      final engine = ref.read(engineProvider);
+      showUndo(
+        count(allArchived ? 'unarchived' : 'archived'),
+        () => engine?.edit([
+          for (final MapEntry(key: id, value: v) in was.entries) engine.op(Collections.noteState, id, 'archived', v),
+        ]),
+      );
+    }
+
+    void trash() {
+      final at = DateTime.now().toUtc().toIso8601String();
+      _apply([for (final id in owned) _op(Collections.notes, id, 'trashed', at)], skipped: n - owned.length);
+      _clearSelection();
+      if (owned.isEmpty) return;
+      final engine = ref.read(engineProvider);
+      showUndo(
+        owned.length == 1 ? 'Note moved to trash' : '${owned.length} notes moved to trash',
+        () => engine?.edit([for (final id in owned) engine.op(Collections.notes, id, 'trashed', '')]),
+      );
+    }
+
+    void setColor(String c) =>
+        _apply([for (final id in editable) _op(Collections.notes, id, 'color', c)], skipped: n - editable.length);
+
+    void remind(DateTime? at) => _apply([
+      for (final id in ids) ...[
+        _op(Collections.noteState, id, 'reminder', at == null ? '' : reminderWire(at)),
+        _op(Collections.noteState, id, 'reminder_done', false),
+      ],
+    ]);
+
+    final pinButton = IconButton(
+      tooltip: allPinned ? 'Unpin' : 'Pin',
+      isSelected: allPinned,
+      icon: const Icon(Icons.push_pin_outlined),
+      selectedIcon: const Icon(Icons.push_pin),
+      onPressed: pin,
+    );
+    final labelButton = IconButton(
+      tooltip: 'Labels',
+      icon: const Icon(Icons.label_outline),
+      onPressed: () => showLabelPicker(context, ids),
+    );
+    final archiveButton = IconButton(
+      tooltip: allArchived ? 'Unarchive' : 'Archive',
+      isSelected: allArchived,
+      icon: const Icon(Icons.archive_outlined),
+      selectedIcon: const Icon(Icons.unarchive_outlined),
+      onPressed: archive,
+    );
+    MenuItemButton trashItem() =>
+        MenuItemButton(leadingIcon: const Icon(Icons.delete_outline), onPressed: trash, child: const Text('Delete'));
+    MenuItemButton selectAllItem() => MenuItemButton(
+      leadingIcon: const Icon(Icons.select_all),
+      onPressed: () => setState(() => _selected.addAll(shown.map((x) => x.id))),
+      child: const Text('Select all'),
+    );
+    Widget more(List<Widget> items) => MenuAnchor(
+      builder: (context, ctl, _) => IconButton(
+        tooltip: 'More options',
+        icon: const Icon(Icons.more_vert),
+        onPressed: () => ctl.isOpen ? ctl.close() : ctl.open(),
+      ),
+      menuChildren: items,
+    );
+
+    if (wide) {
+      return [
+        pinButton,
+        ReminderButton(current: null, onSet: remind, onClear: () => remind(null)),
+        ColorButton(current: color, onPick: setColor),
+        labelButton,
+        archiveButton,
+        more([trashItem(), selectAllItem()]),
+      ];
+    }
+    return [
+      pinButton,
+      labelButton,
+      archiveButton,
+      more([
+        MenuItemButton(
+          leadingIcon: const Icon(Icons.add_alarm_outlined),
+          onPressed: () => showReminderSheet(context, current: null, onSet: remind, onClear: () => remind(null)),
+          child: const Text('Remind me'),
+        ),
+        MenuItemButton(
+          leadingIcon: const Icon(Icons.palette_outlined),
+          onPressed: () => showColorSheet(context, current: color, onPick: setColor),
+          child: const Text('Background color'),
+        ),
+        trashItem(),
+        selectAllItem(),
+      ]),
+    ];
   }
 }
 

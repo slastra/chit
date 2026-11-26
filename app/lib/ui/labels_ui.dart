@@ -124,13 +124,14 @@ class _LabelPickerState extends ConsumerState<_LabelPicker> {
               border: OutlineInputBorder(),
             ),
             onChanged: (_) => setState(() {}),
-            onSubmitted: (_) => canCreate ? _create() : null,
+            // Enter creates what was typed, and stays for the next
+            onEditingComplete: () => canCreate ? _create() : null,
           ),
         ),
         Flexible(
           child: ListView(
             shrinkWrap: true,
-            padding: const EdgeInsets.only(bottom: 16),
+            padding: const EdgeInsets.only(bottom: 8),
             children: [
               for (final l in shown)
                 CheckboxListTile(
@@ -158,6 +159,15 @@ class _LabelPickerState extends ConsumerState<_LabelPicker> {
             ],
           ),
         ),
+        // a dialog ends with its actions; a sheet is dismissed by its handle
+        if (isExpanded(context))
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(onPressed: () => Navigator.pop(context), child: const Text('Done')),
+            ),
+          ),
       ],
     );
   }
@@ -234,7 +244,8 @@ class _EditLabelsState extends ConsumerState<_EditLabels> {
               border: const OutlineInputBorder(),
               suffixIcon: IconButton(tooltip: 'Create label', icon: const Icon(Icons.check), onPressed: _create),
             ),
-            onSubmitted: (_) => _create(),
+            // Enter keeps the field, to make several in a row
+            onEditingComplete: _create,
           ),
         ),
         const SizedBox(height: 8),

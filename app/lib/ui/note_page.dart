@@ -25,7 +25,6 @@ import 'labels_ui.dart';
 import 'reminder_picker.dart';
 import 'share_sheet.dart';
 import 'feedback.dart';
-import 'home_page.dart' show isExpanded;
 import 'theme.dart';
 
 /// One note, open or new. Edits save as you pause (and work offline). A new
@@ -864,44 +863,7 @@ class _NoteBar extends StatelessWidget {
               selectedIcon: const Icon(Icons.check_box),
               onPressed: onToggleList,
             ),
-            // Expanded windows: a popover beside the button (a menu, Material's
-            // pattern for a small anchored choice). Compact: a bottom sheet.
-            if (isExpanded(context))
-              MenuAnchor(
-                builder: (context, ctl, _) => IconButton(
-                  tooltip: 'Background color',
-                  icon: const Icon(Icons.palette_outlined),
-                  onPressed: () => ctl.isOpen ? ctl.close() : ctl.open(),
-                ),
-                menuChildren: [
-                  Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: SizedBox(
-                      width: 348, // two rows of six
-                      // a menu closes once a choice is made
-                      child: Builder(
-                        builder: (context) => _Swatches(
-                          current: color,
-                          onPick: (c) {
-                            onColor(c);
-                            MenuController.maybeOf(context)?.close();
-                          },
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              )
-            else
-              IconButton(
-                tooltip: 'Background color',
-                icon: const Icon(Icons.palette_outlined),
-                onPressed: () => showModalBottomSheet<void>(
-                  context: context,
-                  showDragHandle: true,
-                  builder: (_) => _ColorSheet(current: color, onPick: onColor),
-                ),
-              ),
+            ColorButton(current: color, onPick: onColor),
             AddButton(onPick: onAdd),
           ],
           const Spacer(),
@@ -920,102 +882,5 @@ class _NoteBar extends StatelessWidget {
     return DateUtils.isSameDay(d, DateTime.now())
         ? time
         : '${MaterialLocalizations.of(context).formatShortMonthDay(d)}, $time';
-  }
-}
-
-/// The note colors as a sheet. The chosen one carries a check, so the choice
-/// does not rest on color alone.
-class _ColorSheet extends StatelessWidget {
-  const _ColorSheet({required this.current, required this.onPick});
-  final String current;
-  final ValueChanged<String> onPick;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Color', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 16),
-            _Swatches(
-              current: current,
-              onPick: (c) {
-                onPick(c);
-                Navigator.pop(context);
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// The ten note colors and "default", the chosen one checked.
-class _Swatches extends StatelessWidget {
-  const _Swatches({required this.current, required this.onPick});
-  final String current;
-  final ValueChanged<String> onPick;
-
-  @override
-  Widget build(BuildContext context) => Wrap(
-    spacing: 12,
-    runSpacing: 12,
-    children: [
-      for (final name in ['', ...noteHues.keys])
-        _Swatch(name: name, selected: name == current, onTap: () => onPick(name)),
-    ],
-  );
-}
-
-class _Swatch extends StatelessWidget {
-  const _Swatch({required this.name, required this.selected, required this.onTap});
-  final String name;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = noteScheme(name, theme.brightness);
-    // "Default" is no color: an empty ring, whatever color the note has now
-    final fill = scheme?.primaryContainer ?? Colors.transparent;
-    final ink = scheme?.onPrimaryContainer ?? theme.colorScheme.onSurface;
-    final label = name.isEmpty ? 'Default' : '${name[0].toUpperCase()}${name.substring(1)}';
-    return Tooltip(
-      message: label,
-      child: Semantics(
-        button: true,
-        selected: selected,
-        label: '$label color',
-        child: InkResponse(
-          onTap: onTap,
-          radius: 28,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: fill,
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: selected ? theme.colorScheme.primary : theme.colorScheme.outlineVariant,
-                width: selected ? 2.5 : 1,
-              ),
-            ),
-            child: selected
-                ? Icon(Icons.check, color: ink)
-                : (name.isEmpty
-                      ? Icon(Icons.format_color_reset_outlined, color: theme.colorScheme.onSurfaceVariant)
-                      : null),
-          ),
-        ),
-      ),
-    );
   }
 }

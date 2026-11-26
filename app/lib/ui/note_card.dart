@@ -21,7 +21,17 @@ import 'people.dart';
 /// outlined card; a colored one fills with its color's tonal container (as
 /// Keep draws them). Lists check off right on the card.
 class NoteCard extends ConsumerStatefulWidget {
-  const NoteCard({super.key, required this.note, required this.library, this.onMove, this.onMoveTop});
+  const NoteCard({
+    super.key,
+    required this.note,
+    required this.library,
+    this.onMove,
+    this.onMoveTop,
+    this.selected = false,
+    this.selecting = false,
+    this.onSelect,
+    this.longPressSelects = false,
+  });
 
   final Note note;
   final Library library;
@@ -31,6 +41,17 @@ class NoteCard extends ConsumerStatefulWidget {
   /// where the board cannot be arranged (archive, trash, a search).
   final void Function(int by)? onMove;
   final VoidCallback? onMoveTop;
+
+  /// Selection on the board: whether this card is selected, whether any
+  /// is (a tap then selects rather than opens), and how to toggle it.
+  /// Ctrl- or Shift-click toggles too, and the check at the card's top end
+  /// (shown on hover, and on every card while selecting).
+  final bool selected;
+  final bool selecting;
+  final VoidCallback? onSelect;
+
+  /// A long press selects (where it doesn't lift the card for a drag).
+  final bool longPressSelects;
 
   @override
   ConsumerState<NoteCard> createState() => _NoteCardState();
@@ -42,6 +63,8 @@ class _NoteCardState extends ConsumerState<NoteCard> {
   /// Whether the list was all checked at the last build, to fold the other
   /// items in at the moment the last one is checked off.
   bool? _wasAllDone;
+
+  bool _hover = false;
 
   @override
   Widget build(BuildContext context) {
@@ -91,8 +114,18 @@ class _NoteCardState extends ConsumerState<NoteCard> {
         showDone;
     final rule = scheme?.onPrimaryContainer.withValues(alpha: 0.16) ?? theme.colorScheme.outlineVariant;
 
+    final select = widget.onSelect;
     final body = InkWell(
-      onTap: () => context.push('/note/${note.id}'),
+      onTap: () {
+        final keys = HardwareKeyboard.instance;
+        if (select != null &&
+            (widget.selecting || keys.isControlPressed || keys.isShiftPressed || keys.isMetaPressed)) {
+          select();
+        } else {
+          context.push('/note/${note.id}');
+        }
+      },
+      onLongPress: widget.longPressSelects ? select : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -223,16 +256,49 @@ class _NoteCardState extends ConsumerState<NoteCard> {
     final corners = theme.cardTheme.shape is RoundedRectangleBorder
         ? (theme.cardTheme.shape! as RoundedRectangleBorder).borderRadius
         : const BorderRadius.all(Radius.circular(12));
-    final card = scheme == null
+    // selected: a 2dp primary outline and a filled check at the top end (a
+    // checked card, as Material's checkable card draws it)
+    final selected = widget.selected;
+    final selectedSide = BorderSide(color: theme.colorScheme.primary, width: 2);
+    final plain = scheme == null
         ? Card.outlined(
             color: theme.colorScheme.surface,
             shape: RoundedRectangleBorder(
               borderRadius: corners,
-              side: BorderSide(color: theme.colorScheme.outlineVariant),
+              side: selected ? selectedSide : BorderSide(color: theme.colorScheme.outlineVariant),
             ),
             child: body,
           )
-        : Card.filled(color: scheme.primaryContainer, child: body);
+        : Card.filled(
+            color: scheme.primaryContainer,
+            shape: RoundedRectangleBorder(borderRadius: corners, side: selected ? selectedSide : BorderSide.none),
+            child: body,
+          );
+    final showCheck = select != null && (selected || widget.selecting || _hover);
+    final card = select == null
+        ? plain
+        : MouseRegion(
+            onEnter: (_) => setState(() => _hover = true),
+            onExit: (_) => setState(() => _hover = false),
+            child: Stack(
+              children: [
+                plain,
+                if (showCheck)
+                  PositionedDirectional(
+                    top: 4,
+                    end: 4,
+                    child: IconButton(
+                      tooltip: selected ? 'Deselect note' : 'Select note',
+                      isSelected: selected,
+                      onPressed: select,
+                      color: selected ? theme.colorScheme.primary : faint,
+                      icon: const Icon(Icons.radio_button_unchecked),
+                      selectedIcon: const Icon(Icons.check_circle),
+                    ),
+                  ),
+              ],
+            ),
+          );
     final move = widget.onMove;
     if (move == null) return card;
     return CallbackShortcuts(

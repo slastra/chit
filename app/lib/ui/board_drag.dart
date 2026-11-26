@@ -332,9 +332,13 @@ class _Lift extends State<_LiftedCard> with TickerProviderStateMixin {
 /// The board's drag gestures, around its grid: a mouse press that travels,
 /// or a long press on touch and stylus.
 class BoardGestures extends StatefulWidget {
-  const BoardGestures({super.key, required this.drag, required this.enabled, required this.child});
+  const BoardGestures({super.key, required this.drag, required this.enabled, this.onLifted, required this.child});
   final BoardDrag drag;
   final bool enabled;
+
+  /// A long press picked a card up: it is selected too (a press that
+  /// doesn't travel leaves it in place, selected, as in Keep).
+  final void Function(String id)? onLifted;
   final Widget child;
 
   @override
@@ -381,7 +385,7 @@ class _BoardGesturesState extends State<BoardGestures> {
             (r) {
               r
                 ..onLongPressStart = ((d) {
-                  drag.lift(d.globalPosition, context);
+                  if (drag.lift(d.globalPosition, context)) widget.onLifted?.call(drag.id!);
                 })
                 ..onLongPressMoveUpdate = ((d) {
                   drag.move(d.globalPosition);
