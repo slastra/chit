@@ -12,6 +12,7 @@ import '../data/sync.dart';
 import '../state/providers.dart';
 import 'attachments.dart';
 import 'board_drag.dart';
+import 'check_motion.dart';
 import 'brand.dart';
 import 'create.dart';
 import 'feedback.dart';
@@ -276,8 +277,20 @@ class _HomePageState extends ConsumerState<HomePage> {
         spacing: 12,
         children: [
           if (showPinned) section('Pinned', pinnedHeader),
-          if (dragging && pinned.isEmpty)
-            const MasonryChild(key: ValueKey(pinZone), tag: pinZone, span: true, child: _PinZone()),
+          // nothing else pinned: somewhere to drop a note to pin it. It
+          // unfolds as the drag starts and folds away as the note's slot
+          // moves in (or the note is let go), so it seems to become the slot
+          if (dragging && pinned.every((n) => n.id == _drag.id))
+            MasonryChild(
+              key: const ValueKey(pinZone),
+              tag: pinZone,
+              span: true,
+              child: Fold(
+                enter: true,
+                leaving: pinned.isNotEmpty || _drag.phase == DragPhase.dropping,
+                child: const PinDropZone(),
+              ),
+            ),
           for (final n in pinned) card(n),
           if (showPinned && (others.isNotEmpty || dragging))
             section('Others', othersHeader)
@@ -572,30 +585,80 @@ class _Placeable extends StatelessWidget {
   }
 }
 
-/// Somewhere to drop a note to pin it, while dragging and nothing is pinned.
-class _PinZone extends StatelessWidget {
-  const _PinZone();
+/// Somewhere to drop a note to pin it, while dragging and nothing is
+/// pinned: a dashed outline (the drop-here sign) in the card shape, a pin in
+/// a tonal circle, and what it does.
+class PinDropZone extends StatelessWidget {
+  const PinDropZone();
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      height: 72,
-      margin: const EdgeInsets.only(bottom: 4),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: scheme.outlineVariant),
-      ),
-      alignment: Alignment.center,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        spacing: 8,
-        children: [
-          Icon(Icons.push_pin_outlined, color: scheme.onSurfaceVariant, size: 20),
-          Text('Drop here to pin', style: TextStyle(color: scheme.onSurfaceVariant)),
-        ],
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final shape = theme.cardTheme.shape;
+    final radius = shape is RoundedRectangleBorder
+        ? shape.borderRadius.resolve(Directionality.of(context))
+        : BorderRadius.circular(12);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: CustomPaint(
+        foregroundPainter: _DashedOutline(color: scheme.outline, radius: radius),
+        child: Container(
+          height: 88,
+          decoration: BoxDecoration(color: scheme.surfaceContainerLow, borderRadius: radius),
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            spacing: 16,
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(color: scheme.secondaryContainer, shape: BoxShape.circle),
+                child: Icon(Icons.push_pin_outlined, size: 20, color: scheme.onSecondaryContainer),
+              ),
+              Flexible(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  spacing: 2,
+                  children: [
+                    Text('Drop here to pin', style: theme.textTheme.titleSmall?.copyWith(color: scheme.onSurface)),
+                    Text(
+                      'Pinned notes stay on top',
+                      style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
+}
+
+/// A dashed rounded-rectangle outline.
+class _DashedOutline extends CustomPainter {
+  const _DashedOutline({required this.color, required this.radius});
+  final Color color;
+  final BorderRadius radius;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+    final path = Path()..addRRect(radius.toRRect(Offset.zero & size).deflate(0.75));
+    for (final metric in path.computeMetrics()) {
+      for (var d = 0.0; d < metric.length; d += 10) {
+        canvas.drawPath(metric.extractPath(d, d + 6), paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DashedOutline old) => old.color != color || old.radius != radius;
 }

@@ -54,8 +54,16 @@ class _FoldState extends State<Fold> with TickerProviderStateMixin {
   @override
   void didUpdateWidget(Fold old) {
     super.didUpdateWidget(old);
-    if (widget.leaving && !old.leaving) {
-      unawaited(_to(0).then((_) => widget.onGone?.call()));
+    if (widget.leaving == old.leaving) return;
+    // either way: folding away (then gone), or unfolding again
+    if (widget.leaving) {
+      unawaited(
+        _to(0).then((_) {
+          if (mounted && widget.leaving) widget.onGone?.call();
+        }),
+      );
+    } else {
+      unawaited(_to(1));
     }
   }
 
