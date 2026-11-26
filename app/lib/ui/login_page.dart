@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
@@ -14,7 +15,8 @@ class LoginPage extends ConsumerStatefulWidget {
 }
 
 class _LoginPageState extends ConsumerState<LoginPage> {
-  final _server = TextEditingController(text: 'https://chit.lastra.us');
+  // on the web, the server that served the app
+  final _server = TextEditingController(text: kIsWeb ? Uri.base.origin : 'https://chit.lastra.us');
   final _email = TextEditingController();
   final _password = TextEditingController();
   // Errors show as the failing field's supporting text, Material's place

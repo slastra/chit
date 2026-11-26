@@ -5,6 +5,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
 	"runtime/debug"
 
 	"github.com/pocketbase/pocketbase"
@@ -23,6 +24,12 @@ func main() {
 	migratecmd.MustRegister(app, app.RootCmd, migratecmd.Config{Automigrate: false})
 
 	server.Register(app)
+	// the web app, when its build is there (the Docker image's /srv/web)
+	web := os.Getenv("CHIT_WEB")
+	if web == "" {
+		web = "/srv/web"
+	}
+	server.ServeWeb(app, web)
 
 	app.RootCmd.AddCommand(&cobra.Command{
 		Use:   "version",

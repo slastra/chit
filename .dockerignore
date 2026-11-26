@@ -3,3 +3,8 @@ pb_data
 /chit-server
 /chitd
 /chit
+app/build
+app/.dart_tool
+app/android/.gradle
+app/android/app/build
+app/third_party/**/.dart_tool
