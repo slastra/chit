@@ -314,7 +314,7 @@ class _Empty extends StatelessWidget {
           // waiting for its first note; other shelves and searches keep their
           // glyph on the Expressive cookie
           if (shelf == Shelf.notes && !searching)
-            const ChitMark(size: 80, semanticLabel: null)
+            const ChitMark(size: 120, semanticLabel: null)
           else
             DecoratedBox(
               decoration: ShapeDecoration(
