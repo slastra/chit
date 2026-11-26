@@ -55,6 +55,23 @@ func TestSignupIsInviteOnly(t *testing.T) {
 	}
 }
 
+func TestUsersCanListEachOther(t *testing.T) {
+	app := newApp(t)
+	a := save(t, app, "users", map[string]any{"email": "a@example.com", "name": "A"})
+	b := save(t, app, "users", map[string]any{"email": "b@example.com", "name": "B"})
+
+	if !canView(t, app, a, b) {
+		t.Fatal("signed-in user cannot see another account")
+	}
+	ok, err := app.CanAccessRecord(b, &core.RequestInfo{}, b.Collection().ListRule)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Fatal("anonymous request can list accounts")
+	}
+}
+
 func TestSharingRules(t *testing.T) {
 	app := newApp(t)
 	owner := save(t, app, "users", map[string]any{"email": "owner@example.com"})
