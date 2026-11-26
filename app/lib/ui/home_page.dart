@@ -9,6 +9,7 @@ import '../data/sync.dart';
 import '../state/providers.dart';
 import 'brand.dart';
 import 'create.dart';
+import 'feedback.dart';
 import 'masonry.dart';
 import 'note_card.dart';
 
@@ -77,6 +78,9 @@ class _HomePageState extends ConsumerState<HomePage> {
     final theme = Theme.of(context);
     final firstSync = lib.notes.isEmpty && status?.phase != SyncPhase.online && status?.phase != SyncPhase.offline;
     final margin = wide ? 24.0 : 16.0;
+    final showFab = !wide && _shelf == Shelf.notes;
+    // snackbars float above the compact FAB (56dp and its 16dp margin)
+    snackbarClearance.value = showFab ? 56 + 16 : 0;
 
     Widget grid(List<Note> notes) => Masonry(
       minColumnWidth: wide ? 240 : 160,
@@ -163,7 +167,7 @@ class _HomePageState extends ConsumerState<HomePage> {
       ),
       // Compact and medium: the FAB menu (Note, List, Link, Image). Expanded:
       // the split button at the foot of the docked drawer.
-      floatingActionButton: !wide && _shelf == Shelf.notes ? const NewNoteFabMenu() : null,
+      floatingActionButton: showFab ? const NewNoteFabMenu() : null,
     );
   }
 }
@@ -188,17 +192,10 @@ class _Drawer extends ConsumerWidget {
         if (!docked) Navigator.of(context).pop();
       },
       children: [
-        // the drawer's headline (title small, on surface variant), led by
-        // the mark in primary
+        // the drawer's headline: title small, on surface variant
         Padding(
-          padding: const EdgeInsets.fromLTRB(24, 16, 16, 10),
-          child: Row(
-            spacing: 8,
-            children: [
-              const ChitMark(size: 24, semanticLabel: null),
-              Text('chit', style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-            ],
-          ),
+          padding: const EdgeInsets.fromLTRB(28, 16, 16, 10),
+          child: Text('chit', style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
         ),
         for (final s in Shelf.values)
           NavigationDrawerDestination(icon: Icon(s.icon), selectedIcon: Icon(s.selectedIcon), label: Text(s.label)),
@@ -320,7 +317,11 @@ class _Empty extends StatelessWidget {
             ),
             child: SizedBox.square(
               dimension: 120,
-              child: Icon(searching ? Icons.search_off : shelf.icon, size: 48, color: scheme.onPrimaryContainer),
+              // an empty board is where the mark lives: chit, waiting for
+              // its first note; other shelves and searches keep their glyph
+              child: shelf == Shelf.notes && !searching
+                  ? Center(child: ChitMark(size: 84, color: scheme.onPrimaryContainer, semanticLabel: null))
+                  : Icon(searching ? Icons.search_off : shelf.icon, size: 48, color: scheme.onPrimaryContainer),
             ),
           ),
           const SizedBox(height: 24),

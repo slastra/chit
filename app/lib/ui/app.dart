@@ -97,7 +97,7 @@ class ChitApp extends ConsumerWidget {
     return DynamicColorBuilder(
       builder: (light, dark) => MaterialApp.router(
         title: 'chit',
-        scaffoldMessengerKey: messengerKey,
+        builder: (context, child) => SnackbarHost(child: child ?? const SizedBox.shrink()),
         debugShowCheckedModeBanner: false,
         // a theme file decides light or dark itself
         theme: spec != null ? buildTheme(null, spec.brightness, spec) : buildTheme(light, Brightness.light),
