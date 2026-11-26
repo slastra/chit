@@ -18,7 +18,10 @@ var snap = &protocol.Snapshot{
 		{ID: "garden000000001", Kind: "list", Title: "Garden"},
 		{ID: "old000000000001", Kind: "list", Title: "Old list", Trashed: "2026-11-01 00:00:00.000Z"},
 	},
-	Items: []protocol.Item{{ID: "item00000000001", Note: "groceries000001", Text: "milk", Order: "5"}},
+	Items: []protocol.Item{
+		{ID: "item00000000001", Note: "groceries000001", Text: "milk", Order: "5", Checked: true},
+		{ID: "item00000000002", Note: "groceries000001", Text: "Bread", Order: "6"},
+	},
 }
 
 func TestParse(t *testing.T) {
@@ -31,7 +34,7 @@ func TestParse(t *testing.T) {
 		text    string
 		summary string
 	}{
-		{in: "groceries: milk, eggs", kind: AddItems, note: "groceries000001", items: []string{"milk", "eggs"}, summary: `Add "milk", "eggs" to Groceries`},
+		{in: "groceries: eggs, butter", kind: AddItems, note: "groceries000001", items: []string{"eggs", "butter"}, summary: `Add "eggs", "butter" to Groceries`},
 		{in: "Groc: coffee", kind: AddItems, note: "groceries000001", items: []string{"coffee"}},
 		{in: "gift ideas: scarf", kind: AddItems, note: "gifts0000000001", items: []string{"scarf"}},
 		{in: "wifi: guest code 1234", kind: AppendText, note: "wifi00000000001", text: "guest code 1234", summary: "Add a line to Wifi"},
@@ -100,7 +103,7 @@ func TestOps(t *testing.T) {
 			orders = append(orders, k)
 		}
 	}
-	if len(orders) != 2 || orders[0] <= "5" || orders[1] <= orders[0] {
+	if len(orders) != 2 || orders[0] <= "6" || orders[1] <= orders[0] {
 		t.Fatalf("new items do not sort after the last one: %v", orders)
 	}
 
@@ -110,5 +113,26 @@ func TestOps(t *testing.T) {
 	json.Unmarshal(ops[0].Value, &body)
 	if body != "router in the closet\nguest code 1234" {
 		t.Fatalf("body = %q", body)
+	}
+}
+
+func TestRetypedItemsAreUncheckedNotDuplicated(t *testing.T) {
+	p, err := Parse("groceries: MILK, bread, cheese, cheese", snap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(p.Items, []string{"cheese"}) || !reflect.DeepEqual(p.Reopen, []string{"item00000000001"}) {
+		t.Fatalf("plan = %+v", p)
+	}
+	if p.Summary != `Add "cheese" to Groceries and uncheck "milk"` {
+		t.Fatalf("summary = %q", p.Summary)
+	}
+	n := 0
+	ops := p.Ops(snap, func() string { n++; return fmt.Sprintf("1795651200000-%04x-desk", n) }, func() string { return "new000000000001" })
+	if ops[0].Field != "checked" || string(ops[0].Value) != "false" || len(ops) != 4 {
+		t.Fatalf("ops = %+v", ops)
+	}
+	if p, _ := Parse("groceries: bread", snap); len(p.Items)+len(p.Reopen) != 0 || p.Summary != `"Bread" already on Groceries` {
+		t.Fatalf("already-open plan = %+v", p)
 	}
 }

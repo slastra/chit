@@ -22,10 +22,13 @@ const (
 )
 
 type Plan struct {
-	Kind    string   `json:"kind"`
-	NoteID  string   `json:"note,omitempty"`
-	Target  string   `json:"target,omitempty"` // the target note's title
-	Items   []string `json:"items,omitempty"`
+	Kind   string   `json:"kind"`
+	NoteID string   `json:"note,omitempty"`
+	Target string   `json:"target,omitempty"` // the target note's title
+	Items  []string `json:"items,omitempty"`  // new items to add
+	// Reopen holds checked items typed again ("groceries: milk" when milk was
+	// bought last week): they are unchecked instead of added twice.
+	Reopen  []string `json:"reopen,omitempty"`
 	Title   string   `json:"title,omitempty"`
 	Text    string   `json:"text,omitempty"`
 	Summary string   `json:"summary"`
@@ -49,7 +52,7 @@ func Parse(text string, snap *protocol.Snapshot) (Plan, error) {
 			if n, ok, err := target(snap, name); err != nil {
 				return Plan{}, err
 			} else if ok {
-				return planFor(n, rest), nil
+				return planFor(n, rest, snap), nil
 			}
 		}
 	}
@@ -64,7 +67,7 @@ func Parse(text string, snap *protocol.Snapshot) (Plan, error) {
 	return p, nil
 }
 
-func planFor(n protocol.Note, rest string) Plan {
+func planFor(n protocol.Note, rest string, snap *protocol.Snapshot) Plan {
 	if n.Kind == "list" {
 		var items []string
 		for _, part := range strings.FieldsFunc(rest, func(r rune) bool { return r == ',' || r == '\n' }) {
@@ -72,15 +75,55 @@ func planFor(n protocol.Note, rest string) Plan {
 				items = append(items, t)
 			}
 		}
-		quoted := make([]string, len(items))
-		for i, it := range items {
-			quoted[i] = fmt.Sprintf("%q", it)
-		}
-		return Plan{Kind: AddItems, NoteID: n.ID, Target: notes.Title(n), Items: items,
-			Summary: fmt.Sprintf("Add %s to %s", strings.Join(quoted, ", "), notes.Title(n))}
+		return listPlan(n, items, snap)
 	}
 	return Plan{Kind: AppendText, NoteID: n.ID, Target: notes.Title(n), Text: rest,
 		Summary: fmt.Sprintf("Add a line to %s", notes.Title(n))}
+}
+
+// listPlan sorts typed items into new ones, checked ones to uncheck, and
+// ones already open (left alone), matching text case-insensitively.
+func listPlan(n protocol.Note, typed []string, snap *protocol.Snapshot) Plan {
+	existing := map[string]protocol.Item{}
+	for _, it := range notes.ItemsOf(snap, n.ID) {
+		key := strings.ToLower(strings.TrimSpace(it.Text))
+		if prev, ok := existing[key]; !ok || (prev.Checked && !it.Checked) {
+			existing[key] = it // an open copy wins over a checked one
+		}
+	}
+	p := Plan{Kind: AddItems, NoteID: n.ID, Target: notes.Title(n)}
+	var added, reopened, already []string
+	seen := map[string]bool{}
+	for _, text := range typed {
+		key := strings.ToLower(text)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		it, ok := existing[key]
+		switch {
+		case !ok:
+			p.Items = append(p.Items, text)
+			added = append(added, fmt.Sprintf("%q", text))
+		case it.Checked:
+			p.Reopen = append(p.Reopen, it.ID)
+			reopened = append(reopened, fmt.Sprintf("%q", it.Text))
+		default:
+			already = append(already, fmt.Sprintf("%q", it.Text))
+		}
+	}
+	add, uncheck := strings.Join(added, ", "), strings.Join(reopened, ", ")
+	switch {
+	case len(added) > 0 && len(reopened) > 0:
+		p.Summary = fmt.Sprintf("Add %s to %s and uncheck %s", add, p.Target, uncheck)
+	case len(added) > 0:
+		p.Summary = fmt.Sprintf("Add %s to %s", add, p.Target)
+	case len(reopened) > 0:
+		p.Summary = fmt.Sprintf("Uncheck %s in %s", uncheck, p.Target)
+	default:
+		p.Summary = fmt.Sprintf("%s already on %s", strings.Join(already, ", "), p.Target)
+	}
+	return p
 }
 
 // target finds the note name points at, among notes not in the trash.
@@ -130,6 +173,9 @@ func (p Plan) Ops(snap *protocol.Snapshot, now func() string, newID func() strin
 			}
 		}
 		var ops []protocol.Op
+		for _, id := range p.Reopen {
+			ops = append(ops, op(protocol.Items, id, "checked", false))
+		}
 		for _, text := range p.Items {
 			last = order.After(last)
 			id := newID()
