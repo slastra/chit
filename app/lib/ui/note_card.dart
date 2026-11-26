@@ -12,6 +12,7 @@ import '../core/roles.dart';
 import '../data/replica.dart';
 import '../state/providers.dart';
 import 'attachments.dart';
+import 'media_player.dart';
 import 'check_motion.dart';
 import 'note_colors.dart';
 import 'people.dart';
@@ -82,13 +83,18 @@ class _NoteCardState extends ConsumerState<NoteCard> {
     final done = items.length - open.length;
     final files = library.attachments[note.id] ?? const <Attachment>[];
     final images = files.where((a) => a.isImage).toList();
-    final others = files.where((a) => !a.isImage).toList();
+    // the first video and two audio files play right on the card; the rest
+    // are marks in the footer
+    final videos = files.where((a) => a.kind == MediaKind.video).toList();
+    final audios = files.where((a) => a.kind == MediaKind.audio).toList();
+    final playable = {...videos.take(1), ...audios.take(2)};
+    final others = files.where((a) => !a.isImage && !playable.contains(a)).toList();
     // one mark per kind of file, counted when there are several
     final kinds = <MediaKind, List<Attachment>>{};
     for (final a in others) {
       (kinds[a.kind] ??= []).add(a);
     }
-    final uploading = others.where((a) => a.pending).firstOrNull;
+    final uploading = files.where((a) => !a.isImage && a.pending).firstOrNull;
     final me = ref.watch(sessionProvider).value?.user.id ?? '';
     final shared = (library.members[note.id]?.isNotEmpty ?? false) || note.owner != me;
     final reminder = state.reminderDone ? '' : state.reminder;
@@ -110,6 +116,7 @@ class _NoteCardState extends ConsumerState<NoteCard> {
         labels.isNotEmpty ||
         shared ||
         others.isNotEmpty ||
+        uploading != null ||
         (note.isList && more > 0) ||
         showDone;
     final rule = scheme?.onPrimaryContainer.withValues(alpha: 0.16) ?? theme.colorScheme.outlineVariant;
@@ -131,6 +138,7 @@ class _NoteCardState extends ConsumerState<NoteCard> {
         children: [
           // images across the top, as Keep shows them
           if (images.isNotEmpty) _CardImages(images: images),
+          if (videos.isNotEmpty) InlineVideo(videos.first),
           // content: title, then the text or the open items
           if (hasText)
             Padding(
@@ -183,6 +191,12 @@ class _NoteCardState extends ConsumerState<NoteCard> {
                       ),
                 ],
               ),
+            ),
+          // audio plays from the card: a button, its name, its progress
+          if (audios.isNotEmpty)
+            Padding(
+              padding: EdgeInsets.fromLTRB(12, hasText ? 0 : 12, 16, 12),
+              child: Column(spacing: 4, children: [for (final a in audios.take(2)) CardAudio(a, ink: ink)]),
             ),
           // footer: the note's specifics, below a hairline (Material's card
           // anatomy: a separate bottom region for metadata and actions)

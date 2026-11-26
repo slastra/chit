@@ -5,17 +5,22 @@ import 'theme_spec.dart';
 /// chit's seed when the platform has no wallpaper colors (desktop, web).
 const seed = Color(0xFF4F7CAC);
 
-/// Material 3 Expressive wherever material_ui has it: the Expressive color
-/// scheme variant, Expressive icon buttons and buttons, and the forward-fade
-/// page transition. The rest is standard Material 3.
+/// Material 3 Expressive wherever material_ui has it: Expressive icon
+/// buttons and buttons, and the forward-fade page transition. Colors come
+/// from the desktop's theme file, Android's own scheme, or chit's seed as a
+/// tonal-spot scheme. The rest is standard Material 3.
 ThemeData buildTheme(ColorScheme? dynamicScheme, Brightness brightness, [ThemeSpec? spec]) => spec != null
     ? themeFor(spec.scheme(seed), spec)
     : themeFor(
         dynamicScheme?.harmonized(brightness) ??
+            // nothing to follow (the web, a desktop with no theme file):
+            // chit's blue as Android builds a scheme from a wallpaper. The
+            // Expressive variant rotates hues on purpose, which from one
+            // seed came out green and pink
             ColorScheme.fromSeed(
               seedColor: seed,
               brightness: brightness,
-              dynamicSchemeVariant: DynamicSchemeVariant.expressive,
+              dynamicSchemeVariant: DynamicSchemeVariant.tonalSpot,
             ),
       );
 

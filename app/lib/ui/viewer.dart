@@ -5,8 +5,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:media_kit/media_kit.dart' as mk;
-import 'package:media_kit_video/media_kit_video.dart';
 import 'package:pdfrx/pdfrx.dart';
 
 import '../core/protocol.dart';
@@ -15,6 +13,7 @@ import '../data/media.dart';
 import '../data/replica.dart';
 import '../state/providers.dart';
 import 'attachments.dart';
+import 'media_player.dart';
 import 'feedback.dart';
 import 'app.dart' show themeSpecProvider;
 import 'theme.dart';
@@ -98,8 +97,8 @@ class _ViewerPageState extends ConsumerState<ViewerPage> {
         onPage: (i) => setState(() => _current = images[i].id),
       ),
       MediaKind.pdf => _Pdf(a),
-      MediaKind.video => _Video(a),
-      MediaKind.audio => _Audio(a),
+      MediaKind.video => VideoView(a),
+      MediaKind.audio => AudioView(a),
       MediaKind.other => _Other(a, onSave: () => _save(a)),
     };
 
@@ -121,31 +120,72 @@ class _ViewerPageState extends ConsumerState<ViewerPage> {
           child: Scaffold(
             backgroundColor: Colors.black,
             extendBodyBehindAppBar: true,
-            appBar: AppBar(
-              backgroundColor: Colors.black.withValues(alpha: 0.4),
-              leading: IconButton(tooltip: 'Close', icon: const Icon(Icons.close), onPressed: () => context.pop()),
-              title: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(a.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-                  Text(
-                    a.pending ? 'Waiting to upload' : '${formatSize(a.size)} · ${kindLabel(a)}',
-                    style: dark.textTheme.labelMedium?.copyWith(color: dark.colorScheme.onSurfaceVariant),
-                  ),
-                ],
-              ),
-              actions: [
-                if (!a.pending)
-                  IconButton(
-                    tooltip: 'Save a copy',
-                    icon: const Icon(Icons.download_outlined),
-                    onPressed: () => _save(a),
-                  ),
-                IconButton(tooltip: 'Remove', icon: const Icon(Icons.delete_outline), onPressed: () => _delete(a)),
-                const SizedBox(width: 4),
-              ],
+            appBar: _ViewerBar(
+              attachment: a,
+              onClose: () => context.pop(),
+              onSave: a.pending ? null : () => _save(a),
+              onRemove: () => _delete(a),
             ),
             body: SafeArea(top: a.kind != MediaKind.image, child: body),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The viewer's top app bar, to Material 3's small top app bar spec (64dp;
+/// a one-line title in title large, a subtitle in label medium, both from
+/// the theme), on a scrim so it reads over any picture.
+class _ViewerBar extends StatelessWidget implements PreferredSizeWidget {
+  const _ViewerBar({required this.attachment, required this.onClose, required this.onSave, required this.onRemove});
+  final Attachment attachment;
+  final VoidCallback onClose;
+  final VoidCallback? onSave;
+  final VoidCallback onRemove;
+
+  @override
+  Size get preferredSize => const Size.fromHeight(64);
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final a = attachment;
+    return ColoredBox(
+      color: Colors.black.withValues(alpha: 0.5),
+      child: SafeArea(
+        bottom: false,
+        child: SizedBox(
+          height: 64,
+          child: Row(
+            children: [
+              const SizedBox(width: 4),
+              IconButton(tooltip: 'Close', icon: const Icon(Icons.close), onPressed: onClose),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      a.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleLarge?.copyWith(color: theme.colorScheme.onSurface),
+                    ),
+                    Text(
+                      a.pending ? 'Waiting to upload' : '${formatSize(a.size)} · ${kindLabel(a)}',
+                      maxLines: 1,
+                      style: theme.textTheme.labelMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                  ],
+                ),
+              ),
+              if (onSave != null)
+                IconButton(tooltip: 'Save a copy', icon: const Icon(Icons.download_outlined), onPressed: onSave),
+              IconButton(tooltip: 'Remove', icon: const Icon(Icons.delete_outline), onPressed: onRemove),
+              const SizedBox(width: 4),
+            ],
           ),
         ),
       ),
@@ -233,132 +273,6 @@ class _Pdf extends ConsumerWidget {
       builder: (context, source) => files.hasFiles ? PdfViewer.file(source) : PdfViewer.uri(Uri.parse(source)),
     ),
   );
-}
-
-class _Video extends StatefulWidget {
-  const _Video(this.attachment);
-  final Attachment attachment;
-
-  @override
-  State<_Video> createState() => _VideoState();
-}
-
-class _VideoState extends State<_Video> {
-  late final _player = newPlayer();
-  late final _controller = VideoController(_player);
-  String? _opened;
-
-  @override
-  void dispose() {
-    unawaited(_player.dispose());
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => _Fetched(
-    widget.attachment,
-    builder: (context, source) {
-      if (_opened != source) {
-        _opened = source;
-        unawaited(_player.open(mk.Media(source)));
-      }
-      return CallbackShortcuts(
-        bindings: {const SingleActivator(LogicalKeyboardKey.space): _player.playOrPause},
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: GestureDetector(
-                onTap: _player.playOrPause,
-                child: Video(controller: _controller, controls: NoVideoControls),
-              ),
-            ),
-            Positioned(left: 0, right: 0, bottom: 0, child: _Controls(player: _player)),
-          ],
-        ),
-      );
-    },
-  );
-}
-
-/// Play or pause and a seek bar, on a scrim along the bottom.
-class _Controls extends StatelessWidget {
-  const _Controls({required this.player});
-  final mk.Player player;
-
-  @override
-  Widget build(BuildContext context) => DecoratedBox(
-    decoration: const BoxDecoration(
-      gradient: LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [Color(0x00000000), Color(0xAA000000)],
-      ),
-    ),
-    child: Padding(
-      padding: const EdgeInsets.fromLTRB(12, 24, 12, 12),
-      child: Row(
-        children: [
-          StreamBuilder(
-            stream: player.stream.playing,
-            initialData: player.state.playing,
-            builder: (context, playing) => IconButton.filledTonal(
-              tooltip: (playing.data ?? false) ? 'Pause' : 'Play',
-              icon: Icon((playing.data ?? false) ? Icons.pause_rounded : Icons.play_arrow_rounded),
-              onPressed: player.playOrPause,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: SeekBar(player: player, color: Colors.white),
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-class _Audio extends ConsumerWidget {
-  const _Audio(this.attachment);
-  final Attachment attachment;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final deck = ref.watch(audioDeckProvider);
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 480),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              DecoratedBox(
-                decoration: ShapeDecoration(
-                  color: theme.colorScheme.primaryContainer,
-                  shape: MaterialShapeBorder(shape: MaterialShapes.cookie9Sided),
-                ),
-                child: SizedBox.square(
-                  dimension: 120,
-                  child: Icon(kindIcon(attachment), size: 48, color: theme.colorScheme.onPrimaryContainer),
-                ),
-              ),
-              const SizedBox(height: 24),
-              Text(attachment.name, textAlign: TextAlign.center, style: theme.textTheme.titleMedium),
-              const SizedBox(height: 16),
-              Transform.scale(scale: 1.4, child: AudioButton(attachment)),
-              const SizedBox(height: 12),
-              ValueListenableBuilder(
-                valueListenable: deck.current,
-                builder: (context, current, _) =>
-                    current == attachment.id ? SeekBar(player: deck.player) : const SizedBox(height: 48),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 class _Other extends StatelessWidget {

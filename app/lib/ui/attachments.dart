@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:media_kit/media_kit.dart' as mk;
+import 'package:media_kit_video/media_kit_video.dart';
 import 'package:pdfrx/pdfrx.dart';
 import 'package:record/record.dart';
 
@@ -293,19 +294,42 @@ class FileRow extends ConsumerWidget {
 /// stereo output) lives in the patched copy: third_party/media_kit/CHIT.md.
 mk.Player newPlayer() => mk.Player();
 
-/// The app's one audio player, so starting a recording stops the last one.
-final class AudioDeck {
-  AudioDeck() : player = newPlayer();
+/// The app's one player, audio and video alike: starting one stops
+/// whatever played before, and a video started on a card carries on full
+/// screen.
+final class MediaDeck {
+  MediaDeck() : player = newPlayer();
 
   final mk.Player player;
   final current = ValueNotifier<String?>(null);
   final loading = ValueNotifier<double?>(null);
+
+  /// The picture, made the first time a video plays.
+  VideoController get video => _video ??= VideoController(player);
+  VideoController? _video;
+
+  /// How many views show each video, so one whose last view goes away (a
+  /// card scrolled off, the viewer closed) is paused, not heard unseen.
+  final _views = <String, int>{};
+
+  void showing(String id) => _views[id] = (_views[id] ?? 0) + 1;
+
+  void hidden(String id) {
+    final n = (_views[id] ?? 1) - 1;
+    if (n > 0) {
+      _views[id] = n;
+      return;
+    }
+    _views.remove(id);
+    if (current.value == id) unawaited(player.pause());
+  }
 
   Future<void> toggle(Attachment a, Media media) async {
     if (current.value == a.id) {
       await player.playOrPause();
       return;
     }
+    if (a.kind == MediaKind.video) video; // the picture needs its surface first
     current.value = a.id;
     loading.value = 0;
     try {
@@ -331,8 +355,8 @@ final class AudioDeck {
   }
 }
 
-final audioDeckProvider = Provider<AudioDeck>((ref) {
-  final deck = AudioDeck();
+final mediaDeckProvider = Provider<MediaDeck>((ref) {
+  final deck = MediaDeck();
   ref.onDispose(deck.dispose);
   return deck;
 });
@@ -344,7 +368,7 @@ class AudioButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final deck = ref.watch(audioDeckProvider);
+    final deck = ref.watch(mediaDeckProvider);
     return ValueListenableBuilder(
       valueListenable: deck.current,
       builder: (context, current, _) => StreamBuilder(
@@ -382,7 +406,7 @@ class AudioProgress extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final deck = ref.watch(audioDeckProvider);
+    final deck = ref.watch(mediaDeckProvider);
     return ValueListenableBuilder(
       valueListenable: deck.current,
       builder: (context, current, _) {
