@@ -15,6 +15,7 @@ import '../core/protocol.dart';
 import '../data/local_files.dart' as files;
 import '../data/media.dart';
 import '../state/providers.dart';
+import 'create.dart' show newNoteDefaults;
 import 'feedback.dart';
 import 'home_page.dart' show isExpanded;
 
@@ -569,7 +570,11 @@ Future<void> newNoteWithFiles(BuildContext context, List<NewFile> picked) async 
   final engine = ProviderScope.containerOf(context).read(engineProvider);
   if (engine == null) return;
   final id = randomId();
-  await engine.edit([engine.op(Collections.notes, id, 'kind', 'text')]);
+  final label = newNoteDefaults.value.label;
+  await engine.edit([
+    engine.op(Collections.notes, id, 'kind', 'text'),
+    if (label != null) engine.op(Collections.noteState, id, 'labels', [label]),
+  ]);
   if (!context.mounted) return;
   await attachTo(context, id, picked);
   if (context.mounted) await context.push('/note/$id');

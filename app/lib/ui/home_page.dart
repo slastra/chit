@@ -7,6 +7,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../core/board_order.dart';
 import '../core/protocol.dart';
+import '../core/reminders.dart';
 import '../data/media.dart';
 import '../data/replica.dart';
 import '../data/sync.dart';
@@ -18,11 +19,14 @@ import 'check_motion.dart';
 import 'brand.dart';
 import 'create.dart';
 import 'feedback.dart';
+import 'labels_ui.dart';
 import 'masonry.dart';
 import 'note_card.dart';
 
 enum Shelf {
   notes('Notes', Icons.lightbulb_outline, Icons.lightbulb),
+  reminders('Reminders', Icons.notifications_none, Icons.notifications),
+  labeled('Label', Icons.label_outline, Icons.label),
   archive('Archive', Icons.archive_outlined, Icons.archive),
   trash('Trash', Icons.delete_outline, Icons.delete);
 
@@ -45,6 +49,9 @@ class HomePage extends ConsumerStatefulWidget {
 
 class _HomePageState extends ConsumerState<HomePage> {
   Shelf _shelf = Shelf.notes;
+
+  /// The label shown, on the label shelf.
+  String? _label;
   String _query = '';
   final _scaffold = GlobalKey<ScaffoldState>();
   final _gridKey = GlobalKey();
@@ -150,6 +157,7 @@ class _HomePageState extends ConsumerState<HomePage> {
     bool hit(Note n) =>
         q.isEmpty ||
         n.label.toLowerCase().contains(q) ||
+        lib.labelsOf(n.id).any((l) => l.name.toLowerCase().contains(q)) ||
         n.body.toLowerCase().contains(q) ||
         (lib.items[n.id] ?? const []).any((i) => i.text.toLowerCase().contains(q));
     bool onShelf(Note n) {
@@ -158,21 +166,58 @@ class _HomePageState extends ConsumerState<HomePage> {
         Shelf.trash => n.trashed.isNotEmpty,
         Shelf.archive => st.archived && n.trashed.isEmpty,
         Shelf.notes => !st.archived && n.trashed.isEmpty,
+        Shelf.reminders => n.trashed.isEmpty && !st.reminderDone && reminderTime(st.reminder) != null,
+        // a label finds its notes wherever they are, short of the trash
+        Shelf.labeled => n.trashed.isEmpty && st.labels.contains(_label),
       };
     }
 
     // The Notes shelf in board order (where you put them; new notes on
     // top). Archive and trash newest made first. Editing never moves a note.
     final list = lib.notes.where((n) => onShelf(n) && hit(n)).toList();
-    if (_shelf == Shelf.notes) {
+    if (_shelf == Shelf.notes || _shelf == Shelf.labeled) {
       list.sort((a, b) => boardCompare(a, b, lib.stateOf(a.id), lib.stateOf(b.id)));
+    } else if (_shelf == Shelf.reminders) {
+      DateTime at(Note n) => reminderTime(lib.stateOf(n.id).reminder)!;
+      list.sort((a, b) => at(a).compareTo(at(b)));
     } else {
       list.sort((a, b) => b.created.compareTo(a.created) != 0 ? b.created.compareTo(a.created) : b.id.compareTo(a.id));
     }
     return list;
   }
 
-  void _pick(Shelf s) => setState(() => _shelf = s);
+  void _pick(Shelf s, [String? label]) {
+    setState(() {
+      _shelf = s;
+      _label = s == Shelf.labeled ? label : null;
+    });
+    // a note made from here starts with this shelf's label or reminder
+    newNoteDefaults.value = (label: _label, remind: s == Shelf.reminders);
+  }
+
+  /// The shelf's two sections, with their headers: pinned and the rest;
+  /// on Reminders, what is still to come (soonest first) and what has
+  /// passed (latest first).
+  ({List<Note> pinned, List<Note> others, String first, String second}) _split(Library lib, List<Note> shown) {
+    switch (_shelf) {
+      case Shelf.reminders:
+        final now = DateTime.now();
+        final upcoming = [
+          for (final n in shown)
+            if (reminderTime(lib.stateOf(n.id).reminder)!.isAfter(now)) n,
+        ];
+        final earlier = [
+          for (final n in shown.reversed)
+            if (!reminderTime(lib.stateOf(n.id).reminder)!.isAfter(now)) n,
+        ];
+        return (pinned: upcoming, others: earlier, first: 'Upcoming', second: 'Earlier');
+      case Shelf.notes || Shelf.labeled:
+        final s = _sections(lib, shown);
+        return (pinned: s.pinned, others: s.others, first: 'Pinned', second: 'Others');
+      case Shelf.archive || Shelf.trash:
+        return (pinned: <Note>[], others: shown, first: '', second: '');
+    }
+  }
 
   Future<void> _refresh() async {
     ref.read(engineProvider)?.nudge();
@@ -187,7 +232,8 @@ class _HomePageState extends ConsumerState<HomePage> {
     final shown = _shown(lib);
     final searching = _query.trim().isNotEmpty;
     final canDrag = _shelf == Shelf.notes && !searching;
-    final base = _shelf == Shelf.notes ? _sections(lib, shown) : (pinned: <Note>[], others: shown);
+    final split = _split(lib, shown);
+    final base = (pinned: split.pinned, others: split.others);
     final byId = {for (final n in shown) n.id: n};
     final baseIds = (pinned: [for (final n in base.pinned) n.id], others: [for (final n in base.others) n.id]);
 
@@ -236,7 +282,7 @@ class _HomePageState extends ConsumerState<HomePage> {
     final theme = Theme.of(context);
     final firstSync = lib.notes.isEmpty && status?.phase != SyncPhase.online && status?.phase != SyncPhase.offline;
     final margin = wide ? 24.0 : 16.0;
-    final showFab = !wide && _shelf == Shelf.notes;
+    final showFab = !wide && (_shelf == Shelf.notes || _shelf == Shelf.reminders || _shelf == Shelf.labeled);
     // snackbars float above the compact FAB (56dp and its 16dp margin)
     snackbarClearance.value = showFab ? 56 + 16 : 0;
 
@@ -270,6 +316,9 @@ class _HomePageState extends ConsumerState<HomePage> {
     // one grid for both sections, so a note keeps its card (and its glide)
     // when it is pinned or unpinned by dragging
     final showPinned = pinned.isNotEmpty || dragging;
+    // Reminders heads its passed ones even with nothing still to come
+    final showSecond =
+        (showPinned && (others.isNotEmpty || dragging)) || (_shelf == Shelf.reminders && others.isNotEmpty);
     final grid = BoardGestures(
       drag: _drag,
       enabled: canDrag,
@@ -278,7 +327,7 @@ class _HomePageState extends ConsumerState<HomePage> {
         minColumnWidth: wide ? 240 : 160,
         spacing: 12,
         children: [
-          if (showPinned) section('Pinned', pinnedHeader),
+          if (showPinned) section(split.first, pinnedHeader),
           // nothing else pinned: somewhere to drop a note to pin it. It
           // unfolds as the drag starts and folds away as the note's slot
           // moves in (or the note is let go), so it seems to become the slot
@@ -294,8 +343,8 @@ class _HomePageState extends ConsumerState<HomePage> {
               ),
             ),
           for (final n in pinned) card(n),
-          if (showPinned && (others.isNotEmpty || dragging))
-            section('Others', othersHeader)
+          if (showSecond)
+            section(split.second, othersHeader)
           else
             const MasonryChild(key: ValueKey('#top'), span: true, child: SizedBox(height: 8)),
           for (final n in others) card(n),
@@ -316,7 +365,11 @@ class _HomePageState extends ConsumerState<HomePage> {
           title: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 720),
             child: SearchBar(
-              hintText: _shelf == Shelf.notes ? 'Search your notes' : 'Search ${_shelf.label.toLowerCase()}',
+              hintText: switch (_shelf) {
+                Shelf.notes => 'Search your notes',
+                Shelf.labeled => 'Search ${lib.labels.where((l) => l.id == _label).firstOrNull?.name ?? 'label'}',
+                _ => 'Search ${_shelf.label.toLowerCase()}',
+              },
               elevation: const WidgetStatePropertyAll(0),
               leading: wide
                   ? Padding(
@@ -355,12 +408,12 @@ class _HomePageState extends ConsumerState<HomePage> {
 
     return Scaffold(
       key: _scaffold,
-      drawer: wide ? null : _Drawer(shelf: _shelf, onPick: _pick),
+      drawer: wide ? null : _Drawer(shelf: _shelf, label: _label, onPick: _pick),
       body: SafeArea(
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (wide) _Drawer(shelf: _shelf, docked: true, onPick: _pick),
+            if (wide) _Drawer(shelf: _shelf, label: _label, docked: true, onPick: _pick),
             Expanded(
               // files dropped on the board start a note of their own
               child: DropTarget(
@@ -388,29 +441,65 @@ class _HomePageState extends ConsumerState<HomePage> {
 /// new-note split button at its foot; slid out from the menu button
 /// otherwise (the FAB menu creates notes there).
 class _Drawer extends ConsumerWidget {
-  const _Drawer({required this.shelf, required this.onPick, this.docked = false});
+  const _Drawer({required this.shelf, required this.label, required this.onPick, this.docked = false});
   final Shelf shelf;
+  final String? label;
   final bool docked;
-  final ValueChanged<Shelf> onPick;
+  final void Function(Shelf shelf, [String? label]) onPick;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final labels = ref.watch(libraryProvider).value?.labels ?? const <Label>[];
+    // every destination in order: the shelves, each label, Edit labels (an
+    // action, never the selected one), then archive and trash
+    final entries = <({Shelf? shelf, String? label})>[
+      (shelf: Shelf.notes, label: null),
+      (shelf: Shelf.reminders, label: null),
+      for (final l in labels) (shelf: Shelf.labeled, label: l.id),
+      (shelf: null, label: null),
+      (shelf: Shelf.archive, label: null),
+      (shelf: Shelf.trash, label: null),
+    ];
+    final selected = entries.indexWhere((e) => e.shelf == shelf && e.label == (shelf == Shelf.labeled ? label : null));
+    NavigationDrawerDestination dest(Shelf s, [String? name]) => NavigationDrawerDestination(
+      icon: Icon(s.icon),
+      selectedIcon: Icon(s.selectedIcon),
+      label: Flexible(child: Text(name ?? s.label, overflow: TextOverflow.ellipsis)),
+    );
+    // Material's drawer section header and divider: title small in on
+    // surface variant, inset to the destinations' 28dp
+    Widget header(String text) => Padding(
+      padding: const EdgeInsets.fromLTRB(28, 16, 16, 10),
+      child: Text(text, style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+    );
+    const divider = Padding(padding: EdgeInsets.symmetric(horizontal: 28), child: Divider());
     final drawer = NavigationDrawer(
-      selectedIndex: shelf.index,
+      selectedIndex: selected < 0 ? null : selected,
       backgroundColor: docked ? theme.colorScheme.surface : null,
       onDestinationSelected: (i) {
-        onPick(Shelf.values[i]);
+        final e = entries[i];
         if (!docked) Navigator.of(context).pop();
+        if (e.shelf == null) {
+          unawaited(showEditLabels(context));
+        } else {
+          onPick(e.shelf!, e.label);
+        }
       },
       children: [
-        // the drawer's headline: title small, on surface variant
-        Padding(
-          padding: const EdgeInsets.fromLTRB(28, 16, 16, 10),
-          child: Text('chit', style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+        header('chit'),
+        dest(Shelf.notes),
+        dest(Shelf.reminders),
+        divider,
+        if (labels.isNotEmpty) header('Labels'),
+        for (final l in labels) dest(Shelf.labeled, l.name),
+        NavigationDrawerDestination(
+          icon: Icon(labels.isEmpty ? Icons.new_label_outlined : Icons.edit_outlined),
+          label: Text(labels.isEmpty ? 'Create label' : 'Edit labels'),
         ),
-        for (final s in Shelf.values)
-          NavigationDrawerDestination(icon: Icon(s.icon), selectedIcon: Icon(s.selectedIcon), label: Text(s.label)),
+        divider,
+        dest(Shelf.archive),
+        dest(Shelf.trash),
       ],
     );
     if (!docked) return drawer;
@@ -571,6 +660,8 @@ class _Empty extends StatelessWidget {
             Shelf.notes => 'Notes you add appear here',
             Shelf.archive => 'Archived notes appear here',
             Shelf.trash => 'No notes in the trash',
+            Shelf.reminders => 'Notes with upcoming reminders appear here',
+            Shelf.labeled => 'No notes with this label yet',
           };
     return Padding(
       padding: const EdgeInsets.only(top: 96),

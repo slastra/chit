@@ -153,6 +153,17 @@ final class Member {
   String get role => json['role'] as String? ?? 'editor';
 }
 
+/// One of the reader's labels (each person has their own).
+final class Label {
+  Label(this.json);
+  final Json json;
+
+  String get id => json['id'] as String? ?? '';
+  String get name => json['name'] as String? ?? '';
+  bool get deleted => json['deleted'] == true;
+  Clocks get clocks => _clocks(json['clocks']);
+}
+
 /// The reader's own view of a note: what Keep keeps private on shared notes.
 final class NoteState {
   NoteState(this.json);

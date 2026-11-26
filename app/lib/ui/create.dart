@@ -5,6 +5,11 @@ import 'package:material_ui/material_ui.dart';
 
 import 'attachments.dart';
 
+/// What a note made now starts with: the label being looked at, or a
+/// reminder when made from the Reminders shelf (as Keep does). The board
+/// keeps it current.
+final newNoteDefaults = ValueNotifier<({String? label, bool remind})>((label: null, remind: false));
+
 /// What a new note can start as.
 enum NewKind {
   note('Note', Icons.edit_outlined),

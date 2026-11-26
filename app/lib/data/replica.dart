@@ -311,6 +311,7 @@ final class Library {
     required this.members,
     required this.states,
     required this.attachments,
+    this.labels = const [],
   });
 
   final List<Note> notes;
@@ -318,6 +319,7 @@ final class Library {
   final Map<String, List<Member>> members; // by note
   final Map<String, NoteState> states; // by note
   final Map<String, List<Attachment>> attachments; // by note
+  final List<Label> labels; // live ones, by name
 
   static final empty = Library(
     notes: const [],
@@ -338,8 +340,12 @@ final class Library {
     final members = <String, List<Member>>{};
     final states = <String, NoteState>{};
     final attachments = <String, List<Attachment>>{};
+    final labels = <Label>[];
     for (final r in rows) {
       switch (r.collection) {
+        case Collections.labels:
+          final l = Label(data(r));
+          if (!l.deleted && l.name.trim().isNotEmpty) labels.add(l);
         case Collections.items:
           final it = Item(data(r));
           if (!it.deleted && live.contains(it.note)) (items[it.note] ??= []).add(it);
@@ -360,8 +366,26 @@ final class Library {
     for (final list in attachments.values) {
       list.sort((a, b) => a.created.compareTo(b.created));
     }
-    return Library(notes: notes, items: items, members: members, states: states, attachments: attachments);
+    labels.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    return Library(
+      notes: notes,
+      items: items,
+      members: members,
+      states: states,
+      attachments: attachments,
+      labels: labels,
+    );
   }
 
   NoteState stateOf(String note) => states[note] ?? NoteState({'note': note});
+
+  /// The note's labels for the reader, by name; ids of deleted or unknown
+  /// labels are left out.
+  List<Label> labelsOf(String note) {
+    final ids = stateOf(note).labels.toSet();
+    return [
+      for (final l in labels)
+        if (ids.contains(l.id)) l,
+    ];
+  }
 }

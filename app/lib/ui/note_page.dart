@@ -20,6 +20,8 @@ import 'app.dart' show themeSpecProvider;
 import 'attachments.dart';
 import 'check_motion.dart';
 import '../notifications.dart';
+import 'create.dart' show newNoteDefaults;
+import 'labels_ui.dart';
 import 'reminder_picker.dart';
 import 'share_sheet.dart';
 import 'feedback.dart';
@@ -62,6 +64,11 @@ class NotePage extends ConsumerStatefulWidget {
 class _NotePageState extends ConsumerState<NotePage> {
   late final String _id = widget.noteId ?? randomId();
   late bool _exists = widget.noteId != null;
+
+  /// A new note's label and reminder from the shelf it was made on, sent
+  /// with its first edit.
+  late final _defaults = widget.noteId == null ? newNoteDefaults.value : (label: null, remind: false);
+  late final DateTime? _startReminder = _defaults.remind ? reminderPresets(DateTime.now()).first.at : null;
   late bool _listWhileNew = widget.list;
 
   final _title = TextEditingController();
@@ -142,6 +149,11 @@ class _NotePageState extends ConsumerState<NotePage> {
     final ops = <Op>[];
     if (!_exists) {
       ops.add(_op(Collections.notes, _id, 'kind', _listWhileNew ? 'list' : 'text'));
+      if (_defaults.label case final label?) ops.add(_op(Collections.noteState, _id, 'labels', [label]));
+      if (_startReminder case final at?) {
+        ops.add(_op(Collections.noteState, _id, 'reminder', reminderWire(at)));
+        ops.add(_op(Collections.noteState, _id, 'reminder_done', false));
+      }
       _exists = true;
     }
     ops.addAll(build());
@@ -187,6 +199,12 @@ class _NotePageState extends ConsumerState<NotePage> {
     final engine = _engine;
     final id = _id;
     return () => engine?.edit([engine.op(collection, id, field, value)]);
+  }
+
+  /// Opens the label picker on this note (making the note first, if new).
+  void _labelNote() {
+    if (!_exists) _edit(() => const []);
+    unawaited(showLabelPicker(context, [_id]));
   }
 
   void _setNote(String field, Object? value) => _edit(() => [_op(Collections.notes, _id, field, value)]);
@@ -364,7 +382,8 @@ class _NotePageState extends ConsumerState<NotePage> {
     final role = note == null ? Role.owner : roleOf(note, members, me);
     final editable = _editable = canEdit(role);
     final shared = members.isNotEmpty || !owned;
-    final reminder = state.reminderDone ? null : reminderTime(state.reminder);
+    final reminder = !_exists ? _startReminder : (state.reminderDone ? null : reminderTime(state.reminder));
+    final labels = _exists ? lib.labelsOf(_id) : lib.labels.where((l) => l.id == _defaults.label).toList();
     final trashed = note?.trashed.isNotEmpty ?? false;
 
     for (final it in items) {
@@ -496,6 +515,13 @@ class _NotePageState extends ConsumerState<NotePage> {
                 onPressed: () => ctl.isOpen ? ctl.close() : ctl.open(),
               ),
               menuChildren: [
+                // labels are the reader's own, viewers' too
+                if (!trashed)
+                  MenuItemButton(
+                    leadingIcon: const Icon(Icons.label_outline),
+                    onPressed: _labelNote,
+                    child: Text(labels.isEmpty ? 'Add label' : 'Change labels'),
+                  ),
                 if (owned && _exists)
                   MenuItemButton(
                     leadingIcon: Icon(trashed ? Icons.restore_from_trash_outlined : Icons.delete_outline),
@@ -603,24 +629,43 @@ class _NotePageState extends ConsumerState<NotePage> {
                                 for (final it in checked) itemRow(it),
                             ],
                           ],
-                          // a set reminder, under the text: tap to change it
-                          if (reminder != null)
+                          // the reminder and labels, under the text, as input
+                          // chips: tap to change, x to remove
+                          if (reminder != null || labels.isNotEmpty)
                             Padding(
                               padding: const EdgeInsets.only(top: 8),
-                              child: Align(
-                                alignment: Alignment.centerLeft,
-                                child: InputChip(
-                                  avatar: const Icon(Icons.alarm),
-                                  label: Text(reminderLabel(reminder)),
-                                  onPressed: () => showReminderSheet(
-                                    context,
-                                    current: reminder,
-                                    onSet: _remind,
-                                    onClear: () => _remind(null),
-                                  ),
-                                  deleteButtonTooltipMessage: 'Remove reminder',
-                                  onDeleted: () => _remind(null),
-                                ),
+                              child: Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  if (reminder != null)
+                                    InputChip(
+                                      avatar: const Icon(Icons.alarm),
+                                      label: Text(reminderLabel(reminder)),
+                                      onPressed: () => showReminderSheet(
+                                        context,
+                                        current: reminder,
+                                        onSet: _remind,
+                                        onClear: () => _remind(null),
+                                      ),
+                                      deleteButtonTooltipMessage: 'Remove reminder',
+                                      onDeleted: () => _remind(null),
+                                    ),
+                                  for (final l in labels)
+                                    InputChip(
+                                      label: Text(l.name),
+                                      onPressed: _labelNote,
+                                      deleteButtonTooltipMessage: 'Remove label',
+                                      onDeleted: () => _edit(
+                                        () => [
+                                          _op(Collections.noteState, _id, 'labels', [
+                                            for (final x in labels)
+                                              if (x.id != l.id) x.id,
+                                          ]),
+                                        ],
+                                      ),
+                                    ),
+                                ],
                               ),
                             ),
                           // other files below the text, each a row

@@ -81,7 +81,14 @@ class _NoteCardState extends ConsumerState<NoteCard> {
     final lines = allDone ? items.take(_itemsShown).toList() : open.take(_itemsShown).toList();
     final more = (allDone ? items.length : open.length) - _itemsShown;
     final showDone = note.isList && done > 0 && !allDone; // the list says it when all are done
-    final hasFooter = reminder.isNotEmpty || shared || others.isNotEmpty || (note.isList && more > 0) || showDone;
+    final labels = library.labelsOf(note.id);
+    final hasFooter =
+        reminder.isNotEmpty ||
+        labels.isNotEmpty ||
+        shared ||
+        others.isNotEmpty ||
+        (note.isList && more > 0) ||
+        showDone;
     final rule = scheme?.onPrimaryContainer.withValues(alpha: 0.16) ?? theme.colorScheme.outlineVariant;
 
     final body = InkWell(
@@ -169,6 +176,14 @@ class _NoteCardState extends ConsumerState<NoteCard> {
                                 label: reminderLabel(reminderTime(reminder)!),
                                 ink: faint,
                                 tooltip: 'Reminder',
+                              ),
+                            // two labels at most; the rest as a count
+                            for (final l in labels.take(2)) _Mark(icon: Icons.label_outline, label: l.name, ink: faint),
+                            if (labels.length > 2)
+                              _Mark(
+                                label: '+${labels.length - 2}',
+                                ink: faint,
+                                tooltip: labels.skip(2).map((l) => l.name).join(', '),
                               ),
                             if (note.isList && more > 0) _Mark(label: '$more more', ink: faint),
                             if (showDone) _Mark(icon: Icons.check, label: '$done checked', ink: faint),
