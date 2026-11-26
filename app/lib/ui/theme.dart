@@ -85,8 +85,10 @@ ThemeData themeFor(ColorScheme scheme, [ThemeSpec? spec]) {
 }
 
 extension on ColorScheme {
-  /// A wallpaper scheme rebuilt with the Expressive variant, so Android's
-  /// colors keep the same character as the seed scheme.
+  /// A wallpaper scheme on Android 12 and 13, which publish only tonal
+  /// palettes: rebuilt the way Android builds its own (tonal spot), so it
+  /// comes close to the system's. Android 14+ hands over the scheme itself
+  /// (system_colors.dart).
   ColorScheme harmonized(Brightness b) =>
-      ColorScheme.fromSeed(seedColor: primary, brightness: b, dynamicSchemeVariant: DynamicSchemeVariant.expressive);
+      ColorScheme.fromSeed(seedColor: primary, brightness: b, dynamicSchemeVariant: DynamicSchemeVariant.tonalSpot);
 }

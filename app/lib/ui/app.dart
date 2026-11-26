@@ -11,6 +11,7 @@ import 'login_page.dart';
 import 'note_page.dart';
 import 'theme.dart';
 import 'theme_file.dart';
+import 'system_colors.dart';
 import 'theme_spec.dart';
 import 'viewer.dart';
 
@@ -94,24 +95,58 @@ class _DialogPage extends Page<void> {
   );
 }
 
-class ChitApp extends ConsumerWidget {
+/// Android's own color scheme, read again whenever the app comes back to
+/// the foreground (the wallpaper, and so the scheme, may have changed).
+final systemSchemeProvider = FutureProvider<({ColorScheme light, ColorScheme dark})?>((ref) => systemSchemes());
+
+class ChitApp extends ConsumerStatefulWidget {
   const ChitApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ChitApp> createState() => _ChitAppState();
+}
+
+class _ChitAppState extends ConsumerState<ChitApp> {
+  late final AppLifecycleListener _lifecycle;
+
+  @override
+  void initState() {
+    super.initState();
+    _lifecycle = AppLifecycleListener(onResume: () => ref.invalidate(systemSchemeProvider));
+  }
+
+  @override
+  void dispose() {
+    _lifecycle.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     // The server turned the session away: back to sign-in.
     ref.listen(syncStatusProvider, (_, next) {
       if (next.value?.phase == SyncPhase.signedOut) ref.read(sessionProvider.notifier).signOut();
     });
     final spec = ref.watch(themeSpecProvider).value;
+    final system = ref.watch(systemSchemeProvider).value;
     return DynamicColorBuilder(
       builder: (light, dark) => MaterialApp.router(
         title: 'chit',
         builder: (context, child) => SnackbarHost(child: child ?? const SizedBox.shrink()),
         debugShowCheckedModeBanner: false,
-        // a theme file decides light or dark itself
-        theme: spec != null ? buildTheme(null, spec.brightness, spec) : buildTheme(light, Brightness.light),
-        darkTheme: spec != null ? buildTheme(null, spec.brightness, spec) : buildTheme(dark, Brightness.dark),
+        // Where the colors come from, first match wins: the desktop's theme
+        // file (it decides light or dark itself); Android's own scheme, as
+        // is; the wallpaper palette (older Android); chit's seed.
+        theme: spec != null
+            ? buildTheme(null, spec.brightness, spec)
+            : system != null
+            ? themeFor(system.light)
+            : buildTheme(light, Brightness.light),
+        darkTheme: spec != null
+            ? buildTheme(null, spec.brightness, spec)
+            : system != null
+            ? themeFor(system.dark)
+            : buildTheme(dark, Brightness.dark),
         routerConfig: ref.watch(_router),
       ),
     );
