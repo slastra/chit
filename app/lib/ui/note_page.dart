@@ -20,7 +20,14 @@ import 'theme.dart';
 /// as Keep does. The page wears the note's color: its whole scheme comes
 /// from that hue.
 class NotePage extends ConsumerStatefulWidget {
-  const NotePage({super.key, this.noteId, this.list = false, this.inDialog = false});
+  const NotePage({
+    super.key,
+    this.noteId,
+    this.list = false,
+    this.inDialog = false,
+    this.initialTitle = '',
+    this.initialBody = '',
+  });
 
   final String? noteId;
 
@@ -30,6 +37,12 @@ class NotePage extends ConsumerStatefulWidget {
 
   /// For a new note: start as a checklist.
   final bool list;
+
+  /// For a new note: content it starts with (a link, something shared in).
+  /// A prefilled note is saved as soon as it opens, so closing it without
+  /// an edit keeps it.
+  final String initialTitle;
+  final String initialBody;
 
   @override
   ConsumerState<NotePage> createState() => _NotePageState();
@@ -56,7 +69,19 @@ class _NotePageState extends ConsumerState<NotePage> {
   @override
   void initState() {
     super.initState();
-    if (!_exists && !_listWhileNew) {
+    if (widget.noteId == null && (widget.initialTitle.isNotEmpty || widget.initialBody.isNotEmpty)) {
+      _title.text = widget.initialTitle;
+      _body.text = widget.initialBody;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _edit(
+          () => [
+            if (widget.initialTitle.isNotEmpty) _op(Collections.notes, _id, 'title', widget.initialTitle),
+            if (widget.initialBody.isNotEmpty) _op(Collections.notes, _id, 'body', widget.initialBody),
+          ],
+        );
+        _bodyFocus.requestFocus();
+      });
+    } else if (!_exists && !_listWhileNew) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _bodyFocus.requestFocus());
     }
   }

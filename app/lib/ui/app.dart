@@ -38,7 +38,12 @@ final _router = Provider<GoRouter>((ref) {
         pageBuilder: (context, state) => _notePage(
           context,
           state,
-          (dialog) => NotePage(list: state.uri.queryParameters['list'] == '1', inDialog: dialog),
+          (dialog) => NotePage(
+            list: state.uri.queryParameters['list'] == '1',
+            initialTitle: state.uri.queryParameters['title'] ?? '',
+            initialBody: state.uri.queryParameters['text'] ?? '',
+            inDialog: dialog,
+          ),
         ),
       ),
       GoRoute(

@@ -41,6 +41,7 @@ ThemeData themeFor(ColorScheme scheme, [ThemeSpec? spec]) {
     dialogTheme: corners == null ? null : DialogThemeData(shape: corners),
     // sheets and menus a step above the page, so they read on a black one
     bottomSheetTheme: BottomSheetThemeData(backgroundColor: scheme.surfaceContainerHigh),
+    menuTheme: MenuThemeData(style: MenuStyle(backgroundColor: WidgetStatePropertyAll(scheme.surfaceContainerHigh))),
   );
 }
 

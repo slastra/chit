@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
+import 'package:path_provider/path_provider.dart';
 
 part 'database.g.dart';
 
@@ -43,8 +44,12 @@ class ChitDb extends _$ChitDb {
 
   // The web build runs SQLite as WebAssembly in a worker; the native
   // builds use the bundled library. drift_flutter picks per platform.
+  // On Linux drift's default is the Documents folder, shared by every copy
+  // of the app whatever XDG_DATA_HOME says; the app support directory is
+  // the app's own ($XDG_DATA_HOME/us.lastra.chit), private on every OS.
   static QueryExecutor _open() => driftDatabase(
     name: 'chit',
+    native: const DriftNativeOptions(databaseDirectory: getApplicationSupportDirectory),
     web: DriftWebOptions(sqlite3Wasm: Uri.parse('sqlite3.wasm'), driftWorker: Uri.parse('drift_worker.js')),
   );
 }

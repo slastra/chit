@@ -1,13 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../core/protocol.dart';
 import '../data/replica.dart';
 import '../data/sync.dart';
 import '../state/providers.dart';
+import 'create.dart';
 import 'masonry.dart';
 import 'note_card.dart';
 
@@ -161,37 +161,16 @@ class _HomePageState extends ConsumerState<HomePage> {
           ],
         ),
       ),
-      // Compact and medium: one FAB, set into a bottom app bar that carries
-      // the secondary action. Expanded: the drawer holds both.
-      floatingActionButton: !wide && _shelf == Shelf.notes
-          ? FloatingActionButton(
-              tooltip: 'New note',
-              onPressed: () => context.push('/note/new'),
-              elevation: 0,
-              child: const Icon(Icons.edit_outlined),
-            )
-          : null,
-      floatingActionButtonLocation: FloatingActionButtonLocation.endContained,
-      bottomNavigationBar: !wide && _shelf == Shelf.notes
-          ? BottomAppBar(
-              child: Row(
-                children: [
-                  IconButton(
-                    tooltip: 'New list',
-                    icon: const Icon(Icons.check_box_outlined),
-                    onPressed: () => context.push('/note/new?list=1'),
-                  ),
-                ],
-              ),
-            )
-          : null,
+      // Compact and medium: the FAB menu (Note, List, Link, Image). Expanded:
+      // the split button at the foot of the docked drawer.
+      floatingActionButton: !wide && _shelf == Shelf.notes ? const NewNoteFabMenu() : null,
     );
   }
 }
 
-/// The shelves. Docked beside the notes on an expanded screen, where it also
-/// carries the FAB (Material's placement for expanded layouts); slid out from
-/// the menu button otherwise.
+/// The shelves. Docked beside the notes on an expanded screen, with the
+/// new-note split button at its foot; slid out from the menu button
+/// otherwise (the FAB menu creates notes there).
 class _Drawer extends ConsumerWidget {
   const _Drawer({required this.shelf, required this.onPick, this.docked = false});
   final Shelf shelf;
@@ -201,7 +180,7 @@ class _Drawer extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    return NavigationDrawer(
+    final drawer = NavigationDrawer(
       selectedIndex: shelf.index,
       backgroundColor: docked ? theme.colorScheme.surface : null,
       onDestinationSelected: (i) {
@@ -213,30 +192,22 @@ class _Drawer extends ConsumerWidget {
           padding: const EdgeInsets.fromLTRB(28, 20, 16, 16),
           child: Text('chit', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600)),
         ),
-        if (docked)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: Row(
-              spacing: 8,
-              children: [
-                FloatingActionButton.extended(
-                  heroTag: 'new-note',
-                  elevation: 0,
-                  onPressed: () => context.push('/note/new'),
-                  icon: const Icon(Icons.edit_outlined),
-                  label: const Text('New note'),
-                ),
-                IconButton.filledTonal(
-                  tooltip: 'New list',
-                  icon: const Icon(Icons.check_box_outlined),
-                  onPressed: () => context.push('/note/new?list=1'),
-                ),
-              ],
-            ),
-          ),
         for (final s in Shelf.values)
           NavigationDrawerDestination(icon: Icon(s.icon), selectedIcon: Icon(s.selectedIcon), label: Text(s.label)),
       ],
+    );
+    if (!docked) return drawer;
+    return SizedBox(
+      width: 300,
+      child: Column(
+        children: [
+          Expanded(child: drawer),
+          ColoredBox(
+            color: theme.colorScheme.surface,
+            child: const Padding(padding: EdgeInsets.fromLTRB(16, 8, 16, 20), child: NewNoteSplitButton()),
+          ),
+        ],
+      ),
     );
   }
 }
