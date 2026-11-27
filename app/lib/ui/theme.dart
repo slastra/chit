@@ -47,6 +47,19 @@ final class ShapeScale {
 /// Component colors are left to Material's roles; the tint scheme's surface
 /// ladder is what keeps containers apart on a black background.
 ThemeData themeFor(ColorScheme scheme, [ThemeSpec? spec]) {
+  // the editor, the viewer and the app ask again on every rebuild with the
+  // same few schemes; building a ThemeData is not free
+  final key = (scheme, spec);
+  final hit = _themes.remove(key);
+  if (hit != null) return _themes[key] = hit;
+  if (_themes.length >= 16) _themes.remove(_themes.keys.first);
+  return _themes[key] = _buildTheme(scheme, spec);
+}
+
+/// The themes made lately, least recently asked for first.
+final _themes = <(ColorScheme, ThemeSpec?), ThemeData>{};
+
+ThemeData _buildTheme(ColorScheme scheme, ThemeSpec? spec) {
   const expressive = StyleVariant.material3Expressive;
   final shapes = ShapeScale.of(spec);
   return ThemeData(

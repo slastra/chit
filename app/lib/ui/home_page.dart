@@ -30,30 +30,7 @@ import 'masonry.dart';
 import 'nav_rail.dart';
 import 'note_routes.dart';
 import 'note_card.dart';
-
-/// What the chips under the search bar narrow a shelf to (labels are
-/// chips there too; those pick the label's own shelf).
-enum NoteFilter {
-  lists('Lists'),
-  images('Images'),
-  shared('Shared');
-
-  const NoteFilter(this.label);
-  final String label;
-}
-
-enum Shelf {
-  notes('Notes', Icons.lightbulb_outline, Icons.lightbulb),
-  reminders('Reminders', Icons.notifications_none, Icons.notifications),
-  labeled('Label', Icons.label_outline, Icons.label),
-  archive('Archive', Icons.archive_outlined, Icons.archive),
-  trash('Trash', Icons.delete_outline, Icons.delete);
-
-  const Shelf(this.label, this.icon, this.selectedIcon);
-  final String label;
-  final IconData icon;
-  final IconData selectedIcon;
-}
+import 'shelf.dart';
 
 /// Material's expanded window size class starts at 840dp: from there the
 /// navigation drawer docks beside the content and holds the FAB.
@@ -172,16 +149,47 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   Widget _liftedCard(String id) {
     final lib = ref.read(libraryProvider).value ?? Library.empty;
-    final n = lib.note(id);
-    return n == null ? const SizedBox.shrink() : NoteCard(note: n, library: lib);
+    if (lib.note(id) == null) return const SizedBox.shrink();
+    return NoteCard(view: lib.viewOf(id), me: ref.read(sessionProvider).value?.user.id ?? '');
   }
 
-  /// The board's sections in order: by where you put notes, pinned first.
-  ({List<Note> pinned, List<Note> others}) _sections(Library lib, List<Note> shown) {
-    final pinned = shown.where((n) => lib.stateOf(n.id).pinned).toList();
-    final others = shown.where((n) => !lib.stateOf(n.id).pinned).toList();
-    return (pinned: pinned, others: others);
+  /// The board's cards as last built, by note: a card whose note and place
+  /// on the board are unchanged is handed back as the same widget, which
+  /// Flutter then skips. Typing a search, a change to another note, or a
+  /// sync of nothing new no longer rebuilds every card.
+  final _cards = <String, ({NoteView view, Object how, Widget card})>{};
+
+  Widget _card(NoteView view, String me, ({bool canDrag, bool open, bool selected, bool selecting}) how) {
+    final id = view.note.id;
+    final last = _cards[id];
+    if (last != null && last.view == view && last.how == (how, me)) return last.card;
+    final card = NoteCard(
+      overhang: _checkOverhang,
+      view: view,
+      me: me,
+      onMove: how.canDrag ? (by) => _moveBy(id, by: by) : null,
+      onMoveTop: how.canDrag ? () => _moveBy(id, top: true) : null,
+      open: how.open,
+      selected: how.selected,
+      selecting: how.selecting,
+      onSelect: () => _toggle(id),
+      onMenu: (at) => _openCardMenu(id, at),
+      // where a long press lifts the card, lifting selects it
+      longPressSelects: !how.canDrag,
+    );
+    _cards[id] = (view: view, how: (how, me), card: card);
+    return card;
   }
+
+  /// The shelf as it stands: its notes, ordered, in their two sections.
+  final _memo = ShelfMemo();
+  ShelfView _view(Library lib) => _memo.of(lib, (
+    shelf: _shelf,
+    label: _label,
+    query: _query,
+    filters: _filters,
+    me: ref.read(sessionProvider).value?.user.id ?? '',
+  ));
 
   /// [ids] with [moved] put at [a].
   static ({List<String> pinned, List<String> others}) _place(
@@ -202,7 +210,8 @@ class _HomePageState extends ConsumerState<HomePage> {
     final engine = ref.read(engineProvider);
     final lib = ref.read(libraryProvider).value;
     if (engine == null || lib == null) return;
-    final base = _sections(lib, _shown(lib));
+    final view = _view(lib);
+    final base = (pinned: view.first, others: view.second);
     final dest = (a.pinned ? base.pinned : base.others).where((n) => n.id != id).toList();
     final at = a.before == null ? dest.length : dest.indexWhere((n) => n.id == a.before);
     final ops = planMove(
@@ -230,7 +239,8 @@ class _HomePageState extends ConsumerState<HomePage> {
   void _moveBy(String id, {int by = 0, bool top = false}) {
     final lib = ref.read(libraryProvider).value;
     if (lib == null) return;
-    final base = _sections(lib, _shown(lib));
+    final view = _view(lib);
+    final base = (pinned: view.first, others: view.second);
     final pinned = lib.stateOf(id).pinned;
     final list = pinned ? base.pinned : base.others;
     final from = list.indexWhere((n) => n.id == id);
@@ -239,49 +249,6 @@ class _HomePageState extends ConsumerState<HomePage> {
     if (to == from) return;
     final rest = [...list]..removeAt(from);
     _onDrop(id, (pinned: pinned, before: to < rest.length ? rest[to].id : null));
-  }
-
-  List<Note> _shown(Library lib) {
-    final q = _query.trim().toLowerCase();
-    bool hit(Note n) =>
-        q.isEmpty ||
-        n.label.toLowerCase().contains(q) ||
-        lib.labelsOf(n.id).any((l) => l.name.toLowerCase().contains(q)) ||
-        n.body.toLowerCase().contains(q) ||
-        (lib.items[n.id] ?? const []).any((i) => i.text.toLowerCase().contains(q));
-    final me = ref.read(sessionProvider).value?.user.id ?? '';
-    // every chip that is on has to hold
-    bool passes(Note n) => _filters.every(
-      (f) => switch (f) {
-        NoteFilter.lists => n.isList,
-        NoteFilter.images => (lib.attachments[n.id] ?? const <Attachment>[]).any((a) => a.isImage),
-        NoteFilter.shared => n.owner != me || (lib.members[n.id]?.isNotEmpty ?? false),
-      },
-    );
-    bool onShelf(Note n) {
-      final st = lib.stateOf(n.id);
-      return switch (_shelf) {
-        Shelf.trash => n.trashed.isNotEmpty,
-        Shelf.archive => st.archived && n.trashed.isEmpty,
-        Shelf.notes => !st.archived && n.trashed.isEmpty,
-        Shelf.reminders => n.trashed.isEmpty && !st.reminderDone && reminderTime(st.reminder) != null,
-        // a label finds its notes wherever they are, short of the trash
-        Shelf.labeled => n.trashed.isEmpty && st.labels.contains(_label),
-      };
-    }
-
-    // The Notes shelf in board order (where you put them; new notes on
-    // top). Archive and trash newest made first. Editing never moves a note.
-    final list = lib.notes.where((n) => onShelf(n) && hit(n) && passes(n)).toList();
-    if (_shelf == Shelf.notes || _shelf == Shelf.labeled) {
-      list.sort((a, b) => boardCompare(a, b, lib.stateOf(a.id), lib.stateOf(b.id)));
-    } else if (_shelf == Shelf.reminders) {
-      DateTime at(Note n) => reminderTime(lib.stateOf(n.id).reminder)!;
-      list.sort((a, b) => at(a).compareTo(at(b)));
-    } else {
-      list.sort((a, b) => b.created.compareTo(a.created) != 0 ? b.created.compareTo(a.created) : b.id.compareTo(a.id));
-    }
-    return list;
   }
 
   void _pick(Shelf s, [String? label]) {
@@ -294,30 +261,6 @@ class _HomePageState extends ConsumerState<HomePage> {
     newNoteDefaults.value = (label: _label, remind: s == Shelf.reminders);
   }
 
-  /// The shelf's two sections, with their headers: pinned and the rest;
-  /// on Reminders, what is still to come (soonest first) and what has
-  /// passed (latest first).
-  ({List<Note> pinned, List<Note> others, String first, String second}) _split(Library lib, List<Note> shown) {
-    switch (_shelf) {
-      case Shelf.reminders:
-        final now = DateTime.now();
-        final upcoming = [
-          for (final n in shown)
-            if (reminderTime(lib.stateOf(n.id).reminder)!.isAfter(now)) n,
-        ];
-        final earlier = [
-          for (final n in shown.reversed)
-            if (!reminderTime(lib.stateOf(n.id).reminder)!.isAfter(now)) n,
-        ];
-        return (pinned: upcoming, others: earlier, first: 'Upcoming', second: 'Earlier');
-      case Shelf.notes || Shelf.labeled:
-        final s = _sections(lib, shown);
-        return (pinned: s.pinned, others: s.others, first: 'Pinned', second: 'Others');
-      case Shelf.archive || Shelf.trash:
-        return (pinned: <Note>[], others: shown, first: '', second: '');
-    }
-  }
-
   Future<void> _refresh() async {
     ref.read(engineProvider)?.nudge();
     // give the reconnect a moment; the grid updates on its own as changes land
@@ -327,12 +270,18 @@ class _HomePageState extends ConsumerState<HomePage> {
   @override
   Widget build(BuildContext context) {
     final lib = ref.watch(libraryProvider).value ?? Library.empty;
-    final status = ref.watch(syncStatusProvider).value;
-    final shown = _shown(lib);
+    // only whether the first sync is still under way, not every status
+    final syncing = ref.watch(
+      syncStatusProvider.select((s) => s.value?.phase != SyncPhase.online && s.value?.phase != SyncPhase.offline),
+    );
+    final me = ref.watch(sessionProvider.select((s) => s.value?.user.id ?? ''));
+    // cards of notes gone from the library go too
+    _cards.removeWhere((id, _) => lib.note(id) == null);
+    final view = _view(lib);
+    final shown = view.shown;
     final searching = _narrowed;
     final canDrag = _shelf == Shelf.notes && !searching;
-    final split = _split(lib, shown);
-    final base = (pinned: split.pinned, others: split.others);
+    final base = (pinned: view.first, others: view.second);
     final byId = {for (final n in shown) n.id: n};
     final baseIds = (pinned: [for (final n in base.pinned) n.id], others: [for (final n in base.others) n.id]);
 
@@ -358,12 +307,15 @@ class _HomePageState extends ConsumerState<HomePage> {
           ],
         );
         // anything new since the drop goes where the library puts it
-        for (final i in baseIds.pinned) {
-          if (!ids.pinned.contains(i) && !ids.others.contains(i)) ids.pinned.insert(0, i);
-        }
-        for (final i in baseIds.others) {
-          if (!ids.pinned.contains(i) && !ids.others.contains(i)) ids.others.insert(0, i);
-        }
+        final placed = {...ids.pinned, ...ids.others};
+        ids.pinned.insertAll(0, [
+          for (final i in baseIds.pinned)
+            if (!placed.contains(i)) i,
+        ]);
+        ids.others.insertAll(0, [
+          for (final i in baseIds.others)
+            if (!placed.contains(i)) i,
+        ]);
       }
     }
     if (_drag.id case final dragged? when _drag.anchor != null) {
@@ -383,7 +335,7 @@ class _HomePageState extends ConsumerState<HomePage> {
     final selected = _selected;
     final wide = isExpanded(context);
     final theme = Theme.of(context);
-    final firstSync = lib.notes.isEmpty && status?.phase != SyncPhase.online && status?.phase != SyncPhase.offline;
+    final firstSync = lib.notes.isEmpty && syncing;
     // Material's window size classes: compact below 600dp (navigation
     // behind the menu button), medium to 840 (the collapsed rail), expanded
     // from there (the expanded rail, which its menu button collapses)
@@ -426,20 +378,12 @@ class _HomePageState extends ConsumerState<HomePage> {
         child: _Placeable(
           hidden: _drag.id == n.id,
           overhang: _checkOverhang,
-          child: NoteCard(
-            overhang: _checkOverhang,
-            note: n,
-            library: lib,
-            onMove: canDrag ? (by) => _moveBy(n.id, by: by) : null,
-            onMoveTop: canDrag ? () => _moveBy(n.id, top: true) : null,
+          child: _card(lib.viewOf(n.id), me, (
+            canDrag: canDrag,
             open: wide && _openNote == n.id,
             selected: selected.contains(n.id),
             selecting: selected.isNotEmpty,
-            onSelect: () => _toggle(n.id),
-            onMenu: (at) => _openCardMenu(n.id, at),
-            // where a long press lifts the card, lifting selects it
-            longPressSelects: !canDrag,
-          ),
+          )),
         ),
       ),
     );
@@ -460,7 +404,7 @@ class _HomePageState extends ConsumerState<HomePage> {
         spacing: 12,
         overhang: _checkOverhang,
         children: [
-          if (showPinned) section(split.first, pinnedHeader),
+          if (showPinned) section(view.firstLabel, pinnedHeader),
           // nothing else pinned: somewhere to drop a note to pin it. It
           // unfolds as the drag starts and folds away as the note's slot
           // moves in (or the note is let go), so it seems to become the slot
@@ -477,7 +421,7 @@ class _HomePageState extends ConsumerState<HomePage> {
             ),
           for (final n in pinned) card(n),
           if (showSecond)
-            section(split.second, othersHeader)
+            section(view.secondLabel, othersHeader)
           else
             const MasonryChild(key: ValueKey('#top'), span: true, child: SizedBox(height: 8)),
           for (final n in others) card(n),

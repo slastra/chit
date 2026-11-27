@@ -149,16 +149,14 @@ class _WavyProgressState extends State<WavyProgress> with SingleTickerProviderSt
       value: value == null ? null : '${(value * 100).round()}%',
       child: SizedBox(
         height: 10, // the track's 4dp and the wave's 3dp either side
-        child: AnimatedBuilder(
-          animation: _ctl,
-          builder: (context, _) => CustomPaint(
-            painter: _WavePainter(
-              value: value?.clamp(0.0, 1.0),
-              turn: _ctl.value,
-              color: widget.color ?? scheme.primary,
-              track: widget.trackColor ?? scheme.secondaryContainer,
-              rtl: Directionality.of(context) == TextDirection.rtl,
-            ),
+        // the controller repaints the painter alone, no rebuild a frame
+        child: CustomPaint(
+          painter: _WavePainter(
+            value: value?.clamp(0.0, 1.0),
+            turn: _ctl,
+            color: widget.color ?? scheme.primary,
+            track: widget.trackColor ?? scheme.secondaryContainer,
+            rtl: Directionality.of(context) == TextDirection.rtl,
           ),
         ),
       ),
@@ -167,9 +165,10 @@ class _WavyProgressState extends State<WavyProgress> with SingleTickerProviderSt
 }
 
 class _WavePainter extends CustomPainter {
-  _WavePainter({required this.value, required this.turn, required this.color, required this.track, required this.rtl});
+  _WavePainter({required this.value, required this.turn, required this.color, required this.track, required this.rtl})
+    : super(repaint: turn);
   final double? value;
-  final double turn;
+  final Animation<double> turn;
   final Color color;
   final Color track;
   final bool rtl;
@@ -191,7 +190,8 @@ class _WavePainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = _thickness
       ..strokeCap = StrokeCap.round;
-    final phase = turn * 2;
+    final at = turn.value;
+    final phase = at * 2;
 
     void line(double from, double to) {
       if (to > from) canvas.drawLine(Offset(from, mid), Offset(to, mid), stroke..color = track);
@@ -216,7 +216,7 @@ class _WavePainter extends CustomPainter {
     if (value == null) {
       // a third of the track's length, in from the start and out the end
       final length = size.width / 3;
-      final head = (size.width + length) * Curves.easeInOut.transform(turn);
+      final head = (size.width + length) * Curves.easeInOut.transform(at);
       final from = math.max(r, head - length), to = math.min(size.width - r, head);
       line(r, from - _gap - r);
       wave(from, to, _amplitude);
@@ -234,7 +234,7 @@ class _WavePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_WavePainter old) =>
-      old.value != value || old.turn != turn || old.color != color || old.track != track;
+      old.value != value || old.turn != turn || old.color != color || old.track != track || old.rtl != rtl;
 }
 
 // ---- connected button group --------------------------------------------------

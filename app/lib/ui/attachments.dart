@@ -96,14 +96,31 @@ class _AttachmentImageState extends ConsumerState<AttachmentImage> {
         final image = snap.data;
         if (snap.hasError) return placeholder(broken: true);
         if (image == null) return placeholder();
-        return Image(
-          image: image,
-          fit: widget.fit,
-          width: widget.width,
-          height: widget.height,
-          gaplessPlayback: true,
-          semanticLabel: a.name,
-          errorBuilder: (_, _, _) => placeholder(broken: true),
+        // decoded at about the size it is drawn, not the file's: a phone
+        // photo is 12 megapixels, its card a few hundred pixels across.
+        // Rounded up to a step, so a width easing on a resize is not a
+        // decode a frame
+        return LayoutBuilder(
+          builder: (context, box) {
+            // a crop to cover the box can need more than its width: a wide
+            // picture in a tall tile is scaled by its height. The longer
+            // side, with room, covers both
+            final sides = [box.maxWidth, box.maxHeight, ?widget.height].where((d) => d.isFinite);
+            final across = sides.isEmpty ? 0.0 : sides.reduce((a, b) => a > b ? a : b);
+            final px = across * 1.5 * MediaQuery.devicePixelRatioOf(context);
+            final step = (px / 256).ceil() * 256;
+            return Image(
+              image: step > 0 && widget.fit != BoxFit.contain
+                  ? ResizeImage(image, width: step, policy: ResizeImagePolicy.fit)
+                  : image,
+              fit: widget.fit,
+              width: widget.width,
+              height: widget.height,
+              gaplessPlayback: true,
+              semanticLabel: a.name,
+              errorBuilder: (_, _, _) => placeholder(broken: true),
+            );
+          },
         );
       },
     );
@@ -124,7 +141,7 @@ class UploadMark extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     if (!attachment.pending) return const SizedBox.shrink();
     final scheme = Theme.of(context).colorScheme;
-    final progress = ref.watch(uploadProgressProvider).value?[attachment.id];
+    final progress = ref.watch(uploadProgressProvider.select((m) => m.value?[attachment.id]));
     final ink = onImage ? Colors.white : scheme.primary;
     final mark = progress == null
         ? Icon(Icons.cloud_upload_outlined, size: size, color: onImage ? Colors.white : scheme.onSurfaceVariant)
@@ -330,7 +347,7 @@ class FileRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final a = attachment;
     final scheme = Theme.of(context).colorScheme;
-    final progress = ref.watch(uploadProgressProvider).value?[a.id];
+    final progress = ref.watch(uploadProgressProvider.select((m) => m.value?[a.id]));
     final detail = a.pending
         ? (progress == null ? 'Waiting to upload' : 'Uploading ${(progress * 100).round()}%')
         : '${formatSize(a.size)} · ${kindLabel(a)}';

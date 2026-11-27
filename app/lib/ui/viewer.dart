@@ -80,15 +80,7 @@ class _ViewerPageState extends ConsumerState<ViewerPage> {
       }
       return const Scaffold(backgroundColor: Colors.black);
     }
-    final app = Theme.of(context).colorScheme;
-    final dark = themeFor(
-      ColorScheme.fromSeed(
-        seedColor: app.primary,
-        brightness: Brightness.dark,
-        dynamicSchemeVariant: DynamicSchemeVariant.tonalSpot,
-      ).copyWith(surface: Colors.black, onSurface: Colors.white),
-      ref.watch(themeSpecProvider).value,
-    );
+    final dark = themeFor(_darkScheme(Theme.of(context).colorScheme.primary), ref.watch(themeSpecProvider).value);
     final images = all.where((x) => x.isImage).toList();
 
     final Widget body = switch (a.kind) {
@@ -308,3 +300,12 @@ class _Other extends StatelessWidget {
     );
   }
 }
+
+/// The viewer's dark scheme from the app's primary, on black. Made once per
+/// primary: a swipe between pictures rebuilds the page.
+ColorScheme _darkScheme(Color primary) => _dark[primary] ??= ColorScheme.fromSeed(
+  seedColor: primary,
+  brightness: Brightness.dark,
+  dynamicSchemeVariant: DynamicSchemeVariant.tonalSpot,
+).copyWith(surface: Colors.black, onSurface: Colors.white);
+final _dark = <Color, ColorScheme>{};

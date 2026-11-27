@@ -263,8 +263,13 @@ final class Replica {
 
   // ---- reading -------------------------------------------------------------
 
-  /// Every record, live: a new [Library] after each change.
-  Stream<Library> watch() => db.select(db.records).watch().map(Library.fromRows);
+  /// Every record, live: a new [Library] after each change. Records whose
+  /// stored JSON did not change come through as the same objects (decoded
+  /// once), so whatever compares them can tell what changed by identity.
+  Stream<Library> watch() {
+    final seen = RecordCache();
+    return db.select(db.records).watch().map((rows) => Library.fromRows(rows, seen));
+  }
 
   Future<Library> read() async => Library.fromRows(await db.select(db.records).get());
 
@@ -356,11 +361,27 @@ final class Library {
     attachments: const {},
   );
 
-  factory Library.fromRows(List<StoredRecord> rows) {
-    Json data(StoredRecord r) => (decodeJson(r.data)! as Map).cast<String, Object?>();
+  /// The Library of [rows]. With [seen] (kept from one read to the next),
+  /// a row whose JSON is unchanged gives back its record from last time.
+  factory Library.fromRows(List<StoredRecord> rows, [RecordCache? seen]) {
+    final cache = seen ?? RecordCache();
+    final kept = <String, (String, Object)>{};
+    T typed<T extends Object>(StoredRecord r, T Function(Json) make) {
+      final key = '${r.collection}/${r.id}';
+      final hit = cache._records[key];
+      final T record;
+      if (hit != null && hit.$1 == r.data && hit.$2 is T) {
+        record = hit.$2 as T;
+      } else {
+        record = make((decodeJson(r.data)! as Map).cast<String, Object?>());
+      }
+      kept[key] = (r.data, record);
+      return record;
+    }
+
     final notes = [
       for (final r in rows)
-        if (r.collection == Collections.notes) Note(data(r)),
+        if (r.collection == Collections.notes) typed(r, Note.new),
     ].where((n) => !n.deleted).toList();
     final live = {for (final n in notes) n.id};
     final items = <String, List<Item>>{};
@@ -371,19 +392,19 @@ final class Library {
     for (final r in rows) {
       switch (r.collection) {
         case Collections.labels:
-          final l = Label(data(r));
+          final l = typed(r, Label.new);
           if (!l.deleted && l.name.trim().isNotEmpty) labels.add(l);
         case Collections.items:
-          final it = Item(data(r));
+          final it = typed(r, Item.new);
           if (!it.deleted && live.contains(it.note)) (items[it.note] ??= []).add(it);
         case Collections.members:
-          final m = Member(data(r));
+          final m = typed(r, Member.new);
           if (live.contains(m.note)) (members[m.note] ??= []).add(m);
         case Collections.noteState:
-          final st = NoteState(data(r));
+          final st = typed(r, NoteState.new);
           if (live.contains(st.note)) states[st.note] = st;
         case Collections.attachments:
-          final a = Attachment(data(r));
+          final a = typed(r, Attachment.new);
           if (!a.deleted && live.contains(a.note)) (attachments[a.note] ??= []).add(a);
       }
     }
@@ -394,6 +415,7 @@ final class Library {
       list.sort((a, b) => a.created.compareTo(b.created));
     }
     labels.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    cache._records = kept;
     return Library(
       notes: notes,
       items: items,
@@ -409,6 +431,16 @@ final class Library {
   NoteState stateOf(String note) => states[note] ?? (_blank[note] ??= NoteState({'note': note}));
   final _blank = <String, NoteState>{};
 
+  /// Everything one note's card shows, for comparing with the last one.
+  NoteView viewOf(String note) => NoteView(
+    note: notesById[note]!,
+    state: states[note],
+    items: items[note] ?? const [],
+    attachments: attachments[note] ?? const [],
+    members: members[note] ?? const [],
+    labels: labelsOf(note),
+  );
+
   /// The note's labels for the reader, by name; ids of deleted or unknown
   /// labels are left out.
   List<Label> labelsOf(String note) {
@@ -418,4 +450,66 @@ final class Library {
         if (ids.contains(l.id)) l,
     ];
   }
+}
+
+/// A list that equals another holding the same record objects: for
+/// watching one part of the Library (with `select`) without hearing about
+/// every other change.
+final class Same<T> {
+  const Same(this.list);
+  final List<T> list;
+
+  @override
+  bool operator ==(Object other) => other is Same<T> && NoteView._same(other.list, list);
+
+  @override
+  int get hashCode => list.length;
+}
+
+/// The records one read of the replica decoded, kept for the next, which
+/// reuses those whose stored JSON is unchanged.
+final class RecordCache {
+  Map<String, (String, Object)> _records = const {};
+}
+
+/// One note and what goes with it, as its card shows them. Two views are
+/// equal when they hold the same record objects, which (with a
+/// [RecordCache]) means nothing about the note changed.
+final class NoteView {
+  const NoteView({
+    required this.note,
+    required this.state,
+    required this.items,
+    required this.attachments,
+    required this.members,
+    required this.labels,
+  });
+  final Note note;
+  final NoteState? state;
+  final List<Item> items;
+  final List<Attachment> attachments;
+  final List<Member> members;
+  final List<Label> labels;
+
+  static bool _same<T>(List<T> a, List<T> b) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (!identical(a[i], b[i])) return false;
+    }
+    return true;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is NoteView &&
+      identical(other.note, note) &&
+      identical(other.state, state) &&
+      _same(other.items, items) &&
+      _same(other.attachments, attachments) &&
+      _same(other.members, members) &&
+      _same(other.labels, labels);
+
+  @override
+  int get hashCode => note.hashCode;
 }

@@ -4,8 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../core/protocol.dart';
+import '../data/replica.dart';
 import '../state/providers.dart';
-import 'home_page.dart' show Shelf;
+import 'shelf.dart';
 import 'labels_ui.dart';
 
 /// How the navigation rail shows: collapsed (96dp, icons over labels),
@@ -55,7 +56,8 @@ class NavRail extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final labels = ref.watch(libraryProvider).value?.labels ?? const <Label>[];
+    // the labels alone: the rail has nothing to redo for any other change
+    final labels = ref.watch(libraryProvider.select((l) => Same(l.value?.labels ?? const <Label>[]))).list;
     final collapsed = mode == RailMode.collapsed;
 
     void pick(Shelf s, [String? l]) {

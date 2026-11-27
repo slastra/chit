@@ -89,6 +89,9 @@ class BoardDrag extends ChangeNotifier {
         ? null
         : EdgeDraggingAutoScroller(scrollable, onScrollViewScrolled: _reevaluate, velocityScalar: 30);
     HardwareKeyboard.instance.addHandler(_onKey);
+    // the card in the air, built once: the overlay rebuilds on every
+    // pointer move, the card need not
+    _card = cardFor(hit.id);
     _overlay = OverlayEntry(builder: _buildOverlay);
     Overlay.of(context, rootOverlay: true).insert(_overlay!);
     notifyListeners();
@@ -205,6 +208,7 @@ class BoardDrag extends ChangeNotifier {
     _lift?.drop(() {
       _overlay?.remove();
       _overlay = null;
+      _card = null;
       final finished = id;
       then?.call();
       id = null;
@@ -225,8 +229,9 @@ class BoardDrag extends ChangeNotifier {
     return null;
   }
 
-  Widget _buildOverlay(BuildContext context) =>
-      _LiftedCard(drag: this, child: id == null ? const SizedBox.shrink() : cardFor(id!));
+  Widget? _card;
+
+  Widget _buildOverlay(BuildContext context) => _LiftedCard(drag: this, child: _card ?? const SizedBox.shrink());
 
   @override
   void dispose() {

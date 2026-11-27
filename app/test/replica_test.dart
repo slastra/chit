@@ -189,4 +189,25 @@ void main() {
     await r.applyLocal([op(Collections.notes, list, 'title', 'Shop', clock().now())], me);
     expect(await titles, ['Groceries', 'Shop']);
   });
+
+  test('a re-read keeps the records that did not change, and the views say so', () async {
+    final r = await seeded();
+    final c = clock();
+    const other = 'note00000000002';
+    await r.applyLocal([op(Collections.notes, other, 'kind', 'text', c.now())], me);
+    final libs = <Library>[];
+    final sub = r.watch().listen(libs.add);
+    await pumpEventQueue();
+    // check milk off: the list and its item change, the other note does not
+    await r.applyLocal([op(Collections.items, milk, 'checked', true, c.now())], me);
+    await pumpEventQueue();
+    await sub.cancel();
+    final before = libs.first, after = libs.last;
+    expect(identical(before, after), isFalse);
+    expect(identical(before.note(other), after.note(other)), isTrue);
+    expect(before.viewOf(other), after.viewOf(other));
+    expect(identical(before.items[list]!.single, after.items[list]!.single), isFalse);
+    expect(before.viewOf(list) == after.viewOf(list), isFalse);
+  });
 }
+

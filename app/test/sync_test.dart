@@ -96,34 +96,31 @@ void main() {
   test('the clock starts past every record it has seen, items too', () async {
     final replica = await fresh();
     final late = '${DateTime.now().add(const Duration(days: 365)).millisecondsSinceEpoch}-0000-srv';
-    await replica.applyChanges(
-      [
-        Change.fromJson({
-          'seq': 2,
-          'kind': 'record',
-          'collection': 'notes',
-          'record': 'n1',
-          'value': {'id': 'n1', 'owner': me, 'kind': 'list', 'clocks': <String, String>{}},
-          'hlc': hlc(1),
-          'by': me,
-        }),
-        Change.fromJson({
-          'seq': 3,
-          'kind': 'record',
-          'collection': 'items',
-          'record': 'i1',
-          'value': {
-            'id': 'i1',
-            'note': 'n1',
-            'text': 'milk',
-            'clocks': {'text': late},
-          },
-          'hlc': late,
-          'by': 'someone',
-        }),
-      ],
-      3,
-    );
+    await replica.applyChanges([
+      Change.fromJson({
+        'seq': 2,
+        'kind': 'record',
+        'collection': 'notes',
+        'record': 'n1',
+        'value': {'id': 'n1', 'owner': me, 'kind': 'list', 'clocks': <String, String>{}},
+        'hlc': hlc(1),
+        'by': me,
+      }),
+      Change.fromJson({
+        'seq': 3,
+        'kind': 'record',
+        'collection': 'items',
+        'record': 'i1',
+        'value': {
+          'id': 'i1',
+          'note': 'n1',
+          'text': 'milk',
+          'clocks': {'text': late},
+        },
+        'hlc': late,
+        'by': 'someone',
+      }),
+    ], 3);
     final clock = HlcClock('dev00001');
     final api = ChitApi(server: 'https://chit.example', client: MockClient((_) async => http.Response('', 503)));
     final engine = SyncEngine(replica: replica, api: api, me: me, clock: clock);

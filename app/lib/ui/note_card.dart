@@ -24,8 +24,8 @@ import 'people.dart';
 class NoteCard extends ConsumerStatefulWidget {
   const NoteCard({
     super.key,
-    required this.note,
-    required this.library,
+    required this.view,
+    required this.me,
     this.onMove,
     this.onMoveTop,
     this.selected = false,
@@ -37,8 +37,13 @@ class NoteCard extends ConsumerStatefulWidget {
     this.open = false,
   });
 
-  final Note note;
-  final Library library;
+  /// The note and what goes with it. The card rebuilds only when this
+  /// changes (or how it sits on the board does): the board keeps the same
+  /// widget for an unchanged note.
+  final NoteView view;
+
+  /// Who is looking (for whether the note is shared with them).
+  final String me;
 
   /// Moves the note earlier (-1) or later (+1) on the board, and to the
   /// top: Alt+arrows on a focused card, and screen readers' actions. Null
@@ -84,19 +89,19 @@ class _NoteCardState extends ConsumerState<NoteCard> {
 
   @override
   Widget build(BuildContext context) {
-    final note = widget.note;
-    final library = widget.library;
+    final view = widget.view;
+    final note = view.note;
     final theme = Theme.of(context);
     final scheme = noteScheme(note.color, theme.brightness);
     final ink = scheme?.onPrimaryContainer ?? theme.colorScheme.onSurface;
     final faint = ink.withValues(alpha: 0.7);
     final text = theme.textTheme;
 
-    final state = library.stateOf(note.id);
-    final items = library.items[note.id] ?? const <Item>[];
+    final state = view.state ?? NoteState({'note': note.id});
+    final items = view.items;
     final open = items.where((i) => !i.checked).toList();
     final done = items.length - open.length;
-    final files = library.attachments[note.id] ?? const <Attachment>[];
+    final files = view.attachments;
     final images = files.where((a) => a.isImage).toList();
     // the first video and two audio files play right on the card; the rest
     // are marks in the footer
@@ -110,8 +115,8 @@ class _NoteCardState extends ConsumerState<NoteCard> {
       (kinds[a.kind] ??= []).add(a);
     }
     final uploading = files.where((a) => !a.isImage && a.pending).firstOrNull;
-    final me = ref.watch(sessionProvider).value?.user.id ?? '';
-    final shared = (library.members[note.id]?.isNotEmpty ?? false) || note.owner != me;
+    final me = widget.me;
+    final shared = view.members.isNotEmpty || note.owner != me;
     final reminder = state.reminderDone ? '' : state.reminder;
 
     // the "Empty note" placeholder is for notes with nothing at all: a
@@ -125,7 +130,7 @@ class _NoteCardState extends ConsumerState<NoteCard> {
     final lines = allDone ? items.take(_itemsShown).toList() : open.take(_itemsShown).toList();
     final more = (allDone ? items.length : open.length) - _itemsShown;
     final showDone = note.isList && done > 0 && !allDone; // the list says it when all are done
-    final labels = library.labelsOf(note.id);
+    final labels = view.labels;
     final hasFooter =
         reminder.isNotEmpty ||
         labels.isNotEmpty ||
@@ -134,6 +139,7 @@ class _NoteCardState extends ConsumerState<NoteCard> {
         uploading != null ||
         (note.isList && more > 0) ||
         showDone;
+    final editable = canEdit(roleOf(note, view.members, me));
     final rule = scheme?.onPrimaryContainer.withValues(alpha: 0.16) ?? theme.colorScheme.outlineVariant;
 
     final select = widget.onSelect;
@@ -201,9 +207,7 @@ class _NoteCardState extends ConsumerState<NoteCard> {
                         last: !allDone && open.length == 1,
                         enter: revealing,
                         // a viewer's card shows the list but checks nothing
-                        onCheck: canEdit(roleOf(note, library.members[note.id] ?? const <Member>[], me))
-                            ? () => _check(ref, it)
-                            : null,
+                        onCheck: editable ? () => _check(ref, it) : null,
                       ),
                 ],
               ),
@@ -267,7 +271,7 @@ class _NoteCardState extends ConsumerState<NoteCard> {
                               _Sharers(
                                 ids: [
                                   if (note.owner != me) note.owner,
-                                  for (final m in library.members[note.id] ?? const <Member>[])
+                                  for (final m in view.members)
                                     if (m.user != me) m.user,
                                 ],
                                 ring: scheme?.primaryContainer ?? theme.colorScheme.surface,

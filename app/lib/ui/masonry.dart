@@ -283,8 +283,9 @@ class RenderMasonry extends RenderBox
     _asked = asked;
     final width = _width;
     final columns = columnsFor(width);
-    // the same columns at a new width only stretches cards, which follow
-    // their places directly; a new column count is a real move, and glides
+    // without motion, every card goes straight to its place; with it, a
+    // card that changes column (or neighbor) springs there below, and one
+    // that only stretches with the easing width follows it directly
     final snap = !_animate;
     _columns = columns;
     final colWidth = columnWidth;
