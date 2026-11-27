@@ -210,4 +210,3 @@ void main() {
     expect(before.viewOf(list) == after.viewOf(list), isFalse);
   });
 }
-

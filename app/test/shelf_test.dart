@@ -52,6 +52,31 @@ void main() {
     );
   });
 
+  test('every word must match, anywhere on the note', () {
+    expect([for (final n in shelfView(library(), q(Shelf.notes, query: 'groceries milk')).shown) n.id], ['a']);
+    expect(shelfView(library(), q(Shelf.notes, query: 'groceries springs')).shown, isEmpty);
+  });
+
+  test('a search from Notes reaches the archive, under its own heading', () {
+    final lib = Library(
+      notes: [
+        Note({'id': 'x', 'owner': me, 'title': 'Old receipts', 'created': '2026-10-01'}),
+        Note({'id': 'y', 'owner': me, 'title': 'New receipts', 'created': '2026-11-01'}),
+      ],
+      items: const {},
+      members: const {},
+      states: {
+        'x': NoteState({'note': 'x', 'archived': true}),
+      },
+      attachments: const {},
+    );
+    expect([for (final n in shelfView(lib, q(Shelf.notes)).shown) n.id], ['y']);
+    final v = shelfView(lib, q(Shelf.notes, query: 'receipts'));
+    expect([for (final n in v.first) n.id], ['y']);
+    expect([for (final n in v.second) n.id], ['x']);
+    expect((v.firstLabel, v.secondLabel), ('Notes', 'Archive'));
+  });
+
   test('Reminders: upcoming soonest first, passed latest first', () {
     final v = shelfView(library(), q(Shelf.reminders), now: DateTime.utc(2026, 11, 20));
     expect([for (final n in v.first) n.id], ['b']);

@@ -116,6 +116,7 @@ class _HomePageState extends ConsumerState<HomePage> with _NoteActions {
     super.initState();
     // a drag does not survive the app going away
     _lifecycle = AppLifecycleListener(onHide: _drag.cancel, onPause: _drag.cancel);
+    HardwareKeyboard.instance.addHandler(_onKey);
   }
 
   /// The note open above the board: on expanded windows it is in the detail
@@ -143,8 +144,71 @@ class _HomePageState extends ConsumerState<HomePage> with _NoteActions {
   ({List<String> pinned, List<String> others})? _held;
   Timer? _heldTimer;
 
+  // ---- search and keys ------------------------------------------------------
+
+  final _search = TextEditingController();
+  final _searchFocus = FocusNode(debugLabel: 'search');
+
+  /// The board's keys, whatever has focus (or nothing does): Ctrl+F and /
+  /// to search, Ctrl+N for a new note. Only while the board is the page in
+  /// front, and / only when it would not be typed into a field.
+  bool _onKey(KeyEvent e) {
+    if (e is! KeyDownEvent || !mounted || !(ModalRoute.of(context)?.isCurrent ?? false)) return false;
+    final keys = HardwareKeyboard.instance;
+    final ctrl = keys.isControlPressed || keys.isMetaPressed;
+    final typing = FocusManager.instance.primaryFocus?.context?.widget is EditableText;
+    if ((ctrl && e.logicalKey == LogicalKeyboardKey.keyF) ||
+        (!ctrl && !typing && e.logicalKey == LogicalKeyboardKey.slash)) {
+      _searchFocus.requestFocus();
+      _search.selection = TextSelection(baseOffset: 0, extentOffset: _search.text.length);
+      return true;
+    }
+    if (ctrl && e.logicalKey == LogicalKeyboardKey.keyN && !keys.isShiftPressed) {
+      unawaited(startNote(context, NewKind.note));
+      return true;
+    }
+    return false;
+  }
+
+  void _clearSearch() {
+    _search.clear();
+    setState(() => _query = '');
+  }
+
+  /// Every note in the trash goes for good, after asking: what the Trash
+  /// shelf's Empty trash does. Only the reader's own notes can go.
+  Future<void> _emptyTrash(List<Note> shown) async {
+    final me = ref.read(sessionProvider).value?.user.id ?? '';
+    final mine = [
+      for (final n in shown)
+        if (n.owner == me) n.id,
+    ];
+    if (mine.isEmpty) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        icon: const Icon(Icons.delete_forever_outlined),
+        title: const Text('Empty the trash?'),
+        content: Text(
+          mine.length == 1
+              ? 'The note in the trash goes from every device, for good.'
+              : 'All ${mine.length} notes in the trash go from every device, for good.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Empty trash')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    _apply([for (final id in mine) _op(Collections.notes, id, 'deleted', true)], skipped: shown.length - mine.length);
+  }
+
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onKey);
+    _search.dispose();
+    _searchFocus.dispose();
     _heldTimer?.cancel();
     _router?.routerDelegate.removeListener(_routeChanged);
     _selectionFocus.dispose();
@@ -262,6 +326,10 @@ class _HomePageState extends ConsumerState<HomePage> with _NoteActions {
       _shelf = s;
       _label = s == Shelf.labeled ? label : null;
       _selected.clear();
+      // a new shelf starts clean: no words, no chips
+      _search.clear();
+      _query = '';
+      _filters.clear();
     });
     // a note made from here starts with this shelf's label or reminder
     newNoteDefaults.value = (label: _label, remind: s == Shelf.reminders);
@@ -398,8 +466,11 @@ class _HomePageState extends ConsumerState<HomePage> with _NoteActions {
     // when it is pinned or unpinned by dragging
     final showPinned = pinned.isNotEmpty || dragging;
     // Reminders heads its passed ones even with nothing still to come
+    // Reminders, and a search reaching the archive, head their second part
+    // even with nothing in the first
     final showSecond =
-        (showPinned && (others.isNotEmpty || dragging)) || (_shelf == Shelf.reminders && others.isNotEmpty);
+        (showPinned && (others.isNotEmpty || dragging)) ||
+        ((_shelf == Shelf.reminders || view.secondLabel == 'Archive') && others.isNotEmpty);
     final board = BoardGestures(
       drag: _drag,
       enabled: canDrag,
@@ -465,6 +536,8 @@ class _HomePageState extends ConsumerState<HomePage> with _NoteActions {
           title: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 720),
             child: SearchBar(
+              controller: _search,
+              focusNode: _searchFocus,
               hintText: switch (_shelf) {
                 Shelf.notes => 'Search your notes',
                 Shelf.labeled => 'Search ${lib.labels.where((l) => l.id == _label).firstOrNull?.name ?? 'label'}',
@@ -485,6 +558,8 @@ class _HomePageState extends ConsumerState<HomePage> with _NoteActions {
                       child: Icon(Icons.search, color: theme.colorScheme.onSurface),
                     ),
               trailing: [
+                if (_query.isNotEmpty)
+                  IconButton(tooltip: 'Clear search', icon: const Icon(Icons.close), onPressed: _clearSearch),
                 const _SyncMark(),
                 _Account(shelf: _shelf, onPick: compact ? _pick : null),
               ],
@@ -506,14 +581,44 @@ class _HomePageState extends ConsumerState<HomePage> with _NoteActions {
                     },
                     // Reminders and the labels are shelves of their own,
                     // reached from Notes (and from each other)
-                    reminders: _shelf == Shelf.archive ? null : _shelf == Shelf.reminders,
+                    // (beside the expanded rail, which lists them, only the
+                    // kinds: the rest would say the same thing twice)
+                    reminders: _shelf == Shelf.archive || expandedRail ? null : _shelf == Shelf.reminders,
                     onReminders: (on) => _pick(on ? Shelf.reminders : Shelf.notes),
-                    labels: _shelf == Shelf.archive ? const [] : lib.labels,
+                    labels: _shelf == Shelf.archive || expandedRail ? const [] : lib.labels,
                     label: _shelf == Shelf.labeled ? _label : null,
                     onLabel: (id, on) => on ? _pick(Shelf.labeled, id) : _pick(Shelf.notes),
                   ),
                 ),
         ),
+        // Archive and Trash say where you are (on a phone the search bar's
+        // hint is the only other sign, gone once you type); Trash can be
+        // emptied in one go
+        if (_shelf == Shelf.archive || _shelf == Shelf.trash)
+          SliverToBoxAdapter(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1600),
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(margin + 4, 4, margin, 0),
+                  child: SizedBox(
+                    height: 48,
+                    child: Row(
+                      children: [
+                        Expanded(child: Text(_shelf.label, style: theme.textTheme.titleLarge)),
+                        if (_shelf == Shelf.trash && shown.isNotEmpty)
+                          TextButton.icon(
+                            onPressed: () => _emptyTrash(shown),
+                            icon: const Icon(Icons.delete_forever_outlined),
+                            label: const Text('Empty trash'),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
         SliverPadding(
           // the grid insets its own columns by the check's overhang
           padding: EdgeInsets.fromLTRB(margin - _checkOverhang, 0, margin, 120),

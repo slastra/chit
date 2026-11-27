@@ -45,13 +45,22 @@ typedef ShelfView = ({List<Note> shown, List<Note> first, List<Note> second, Str
 
 /// The notes [q] picks from [lib], in order, in their sections.
 ShelfView shelfView(Library lib, ShelfQuery q, {DateTime? now}) {
-  final words = q.query.trim().toLowerCase();
-  bool hit(Note n) =>
-      words.isEmpty ||
-      n.label.toLowerCase().contains(words) ||
-      n.body.toLowerCase().contains(words) ||
-      lib.labelsOf(n.id).any((l) => l.name.toLowerCase().contains(words)) ||
-      (lib.items[n.id] ?? const []).any((i) => i.text.toLowerCase().contains(words));
+  // each word searched for must be somewhere on the note (its title,
+  // text, items or labels), in any order: "grocery milk" finds the
+  // Groceries list with milk on it
+  final words = q.query.toLowerCase().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+  final searching = words.isNotEmpty;
+  bool hit(Note n) {
+    if (!searching) return true;
+    final text = [
+      n.title,
+      n.body,
+      for (final l in lib.labelsOf(n.id)) l.name,
+      for (final i in lib.items[n.id] ?? const <Item>[]) i.text,
+    ].join('\n').toLowerCase();
+    return words.every(text.contains);
+  }
+
   // every chip that is on has to hold
   bool passes(Note n) => q.filters.every(
     (f) => switch (f) {
@@ -68,7 +77,8 @@ ShelfView shelfView(Library lib, ShelfQuery q, {DateTime? now}) {
     return switch (q.shelf) {
       Shelf.trash => n.trashed.isNotEmpty,
       Shelf.archive => st.archived && n.trashed.isEmpty,
-      Shelf.notes => !st.archived && n.trashed.isEmpty,
+      // a search from Notes reaches the archive too
+      Shelf.notes => n.trashed.isEmpty && (!st.archived || searching),
       Shelf.reminders => n.trashed.isEmpty && !st.reminderDone && dueOf(n) != null,
       // a label finds its notes wherever they are, short of the trash
       Shelf.labeled => n.trashed.isEmpty && st.labels.contains(q.label),
@@ -80,6 +90,22 @@ ShelfView shelfView(Library lib, ShelfQuery q, {DateTime? now}) {
   // Editing never moves a note.
   final shown = lib.notes.where((n) => onShelf(n) && hit(n) && passes(n)).toList();
   switch (q.shelf) {
+    case Shelf.notes when searching:
+      // what was found: the notes, then what is archived
+      shown.sort((a, b) => boardCompare(a, b, lib.stateOf(a.id), lib.stateOf(b.id)));
+      return (
+        shown: shown,
+        first: [
+          for (final n in shown)
+            if (!lib.stateOf(n.id).archived) n,
+        ],
+        second: [
+          for (final n in shown)
+            if (lib.stateOf(n.id).archived) n,
+        ],
+        firstLabel: 'Notes',
+        secondLabel: 'Archive',
+      );
     case Shelf.notes || Shelf.labeled:
       shown.sort((a, b) => boardCompare(a, b, lib.stateOf(a.id), lib.stateOf(b.id)));
       final pinned = [

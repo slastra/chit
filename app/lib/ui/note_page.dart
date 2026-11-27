@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../core/items.dart';
+import '../core/links.dart';
 import '../core/order.dart';
 import '../core/protocol.dart';
 import '../core/reminders.dart';
@@ -28,6 +30,7 @@ import 'share_sheet.dart';
 import 'feedback.dart';
 import 'theme.dart';
 import 'expressive.dart';
+import 'links_ui.dart';
 
 /// One note, open or new. Edits save as you pause (and work offline). A new
 /// note only exists once something is typed; leaving one empty discards it.
@@ -295,6 +298,34 @@ class _NotePageState extends ConsumerState<NotePage> {
     );
   }
 
+  /// Moves the open item at [from] to [to] (its index once moved).
+  void _moveItem(List<Item> open, int from, int to) {
+    final keys = moveItem(open, from, to);
+    if (keys.isEmpty) return;
+    _edit(() => [for (final MapEntry(key: id, value: k) in keys.entries) _op(Collections.items, id, 'order', k)]);
+  }
+
+  /// Indents an item under the one above, or brings it back out.
+  void _indent(Item it, {required bool inward}) {
+    final to = inward ? 1 : 0;
+    if (it.indent == to) return;
+    _edit(() => [_op(Collections.items, it.id, 'indent', to)]);
+  }
+
+  /// Backspace in an empty item: it goes, and the cursor moves to the end
+  /// of the one above (if there is one).
+  void _removeEmpty(List<Item> open, Item it) {
+    final i = open.indexWhere((x) => x.id == it.id);
+    _edit(() => [_op(Collections.items, it.id, 'deleted', true)]);
+    if (i > 0) {
+      final above = open[i - 1];
+      final node = _itemNode(above.id)..requestFocus();
+      final c = _itemCtl(above);
+      c.selection = TextSelection.collapsed(offset: c.text.length);
+      node.requestFocus();
+    }
+  }
+
   /// A checklist becomes text (one line per item, open ones first) or text
   /// becomes a checklist (one item per line).
   void _convert(Note? note, List<Item> items) {
@@ -372,12 +403,15 @@ class _NotePageState extends ConsumerState<NotePage> {
     final owned = note == null || note.owner == me;
     final members = lib.members[_id] ?? const <Member>[];
     final role = note == null ? Role.owner : roleOf(note, members, me);
-    final editable = _editable = canEdit(role);
+    // a note in the trash is read until it is restored: an edit there would
+    // be lost on the way out
+    final trashed = note != null && note.trashed.isNotEmpty;
+    final editable = _editable = canEdit(role) && !trashed;
     final shared = members.isNotEmpty || !owned;
     final roomy = widget.inPane || !isCompact(context);
     final reminder = !_exists ? _startReminder : (state.reminderDone ? null : reminderTime(state.reminder));
     final labels = _exists ? lib.labelsOf(_id) : lib.labels.where((l) => l.id == _defaults.label).toList();
-    final trashed = note?.trashed.isNotEmpty ?? false;
+    final links = linksIn(isList ? items.map((i) => i.text).join('\n') : (note?.body ?? _body.text));
 
     for (final it in items) {
       final c = _itemCtl(it);
@@ -405,7 +439,7 @@ class _NotePageState extends ConsumerState<NotePage> {
 
     // A row folds out of its list and into the other when checked or
     // unchecked here (check_motion.dart); a change from elsewhere just moves.
-    Widget itemRow(Item it) => Fold(
+    Widget itemRow(Item it, {Widget? handle}) => Fold(
       key: ValueKey('${it.id}/${it.checked}'),
       leaving: _checkOff.isLeaving(it.id),
       enter: _checkOff.takeArrival(it.id, it.checked),
@@ -426,6 +460,9 @@ class _NotePageState extends ConsumerState<NotePage> {
         onChanged: (v) => _later('item:${it.id}', () => _edit(() => [_op(Collections.items, it.id, 'text', v)])),
         onSubmitted: () => _addItem(items, after: it),
         onRemove: () => _edit(() => [_op(Collections.items, it.id, 'deleted', true)]),
+        onIndent: (inward) => _indent(it, inward: inward),
+        onRemoveEmpty: () => _removeEmpty(open, it),
+        handle: handle,
       ),
     );
 
@@ -497,7 +534,14 @@ class _NotePageState extends ConsumerState<NotePage> {
                 isSelected: state.pinned,
                 icon: const Icon(Icons.push_pin_outlined),
                 selectedIcon: const Icon(Icons.push_pin),
-                onPressed: () => _setState('pinned', !state.pinned),
+                // a note changing sections lands on top of its new one, as
+                // chitd does
+                onPressed: () => _edit(
+                  () => [
+                    _op(Collections.noteState, _id, 'pinned', !state.pinned),
+                    _op(Collections.noteState, _id, 'order', ''),
+                  ],
+                ),
               ),
               IconButton(
                 tooltip: state.archived ? 'Unarchive' : 'Archive',
@@ -566,6 +610,19 @@ class _NotePageState extends ConsumerState<NotePage> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
+                            // why the note cannot be changed, when it cannot
+                            if (trashed)
+                              _Notice(
+                                icon: Icons.delete_outline,
+                                text: 'In the trash',
+                                action: owned ? 'Restore' : null,
+                                onAction: () => _setNote('trashed', ''),
+                              )
+                            else if (!editable && note != null)
+                              const _Notice(
+                                icon: Icons.visibility_outlined,
+                                text: 'View only: shared with you to read',
+                              ),
                             // pictures lead the note
                             if (images.isNotEmpty)
                               Padding(
@@ -601,7 +658,42 @@ class _NotePageState extends ConsumerState<NotePage> {
                                 contentInsertionConfiguration: _insertion,
                               ),
                             if (isList) ...[
-                              for (final it in open) itemRow(it),
+                              // open items reorder by their handles
+                              if (editable)
+                                ReorderableListView(
+                                  shrinkWrap: true,
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  buildDefaultDragHandles: false,
+                                  onReorderItem: (from, to) => _moveItem(open, from, to),
+                                  children: [
+                                    for (final (i, it) in open.indexed)
+                                      KeyedSubtree(
+                                        key: ValueKey('row/${it.id}'),
+                                        child: itemRow(
+                                          it,
+                                          handle: ReorderableDragStartListener(
+                                            index: i,
+                                            child: MouseRegion(
+                                              cursor: SystemMouseCursors.grab,
+                                              child: Tooltip(
+                                                message: 'Drag to move',
+                                                child: Padding(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                                                  child: Icon(
+                                                    Icons.drag_indicator,
+                                                    size: 20,
+                                                    color: theme.colorScheme.onSurfaceVariant,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                )
+                              else
+                                for (final it in open) itemRow(it),
                               if (editable)
                                 ListTile(
                                   leading: const Icon(Icons.add),
@@ -620,11 +712,59 @@ class _NotePageState extends ConsumerState<NotePage> {
                                   ),
                                   title: Text('${checked.length} checked item${checked.length == 1 ? '' : 's'}'),
                                   onTap: () => setState(() => _showChecked = !_showChecked),
+                                  // a list used again and again (groceries,
+                                  // packing): all back on it, or the done ones gone
+                                  trailing: !editable
+                                      ? null
+                                      : MenuAnchor(
+                                          builder: (context, menu, _) => IconButton(
+                                            tooltip: 'Checked items',
+                                            icon: const Icon(Icons.more_vert),
+                                            onPressed: () => menu.isOpen ? menu.close() : menu.open(),
+                                          ),
+                                          menuChildren: [
+                                            MenuItemButton(
+                                              leadingIcon: const Icon(Icons.remove_done),
+                                              onPressed: () => _edit(
+                                                () => [
+                                                  for (final it in checked)
+                                                    _op(Collections.items, it.id, 'checked', false),
+                                                ],
+                                              ),
+                                              child: const Text('Uncheck all'),
+                                            ),
+                                            MenuItemButton(
+                                              leadingIcon: const Icon(Icons.delete_sweep_outlined),
+                                              onPressed: () {
+                                                _edit(
+                                                  () => [
+                                                    for (final it in checked)
+                                                      _op(Collections.items, it.id, 'deleted', true),
+                                                  ],
+                                                );
+                                                showUndo(
+                                                  checked.length == 1
+                                                      ? 'Checked item deleted'
+                                                      : '${checked.length} checked items deleted',
+                                                  () => _edit(
+                                                    () => [
+                                                      for (final it in checked)
+                                                        _op(Collections.items, it.id, 'deleted', false),
+                                                    ],
+                                                  ),
+                                                );
+                                              },
+                                              child: const Text('Delete checked items'),
+                                            ),
+                                          ],
+                                        ),
                                 ),
                                 if (_showChecked)
                                   for (final it in checked) itemRow(it),
                               ],
                             ],
+                            // its links, to open (a saved link is no use as text alone)
+                            if (links.isNotEmpty) NoteLinks(links: links),
                             // the reminder and labels, under the text, as input
                             // chips: tap to change, x to remove
                             if (reminder != null || labels.isNotEmpty)
@@ -732,9 +872,22 @@ class _ItemRow extends StatefulWidget {
     required this.onChanged,
     required this.onSubmitted,
     required this.onRemove,
+    required this.onIndent,
+    required this.onRemoveEmpty,
+    this.handle,
   });
 
   final Item item;
+
+  /// Indents (true) or brings back out (false): Tab and Shift+Tab, or the
+  /// button on the row being edited.
+  final ValueChanged<bool> onIndent;
+
+  /// Backspace in the empty row.
+  final VoidCallback onRemoveEmpty;
+
+  /// What the row is dragged by, before its checkbox (open items only).
+  final Widget? handle;
 
   /// A viewer sees the list but cannot change it.
   final bool editable;
@@ -775,6 +928,7 @@ class _ItemRowState extends State<_ItemRow> {
     final theme = Theme.of(context);
     final it = widget.item;
     final active = _hover || widget.focusNode.hasFocus;
+    final editing = widget.editable && widget.focusNode.hasFocus;
     return MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
@@ -782,23 +936,54 @@ class _ItemRowState extends State<_ItemRow> {
         padding: EdgeInsets.only(left: 4.0 + it.indent * 28),
         child: Row(
           children: [
+            ?widget.handle,
             Checkbox(value: widget.checked, onChanged: widget.editable ? (v) => widget.onCheck(v ?? false) : null),
             Expanded(
-              child: TextField(
-                readOnly: !widget.editable,
-                controller: widget.controller,
-                focusNode: widget.focusNode,
-                style: theme.textTheme.bodyLarge?.copyWith(
-                  decoration: widget.checked ? TextDecoration.lineThrough : null,
-                  color: widget.checked ? theme.colorScheme.onSurfaceVariant : null,
+              // Tab and Shift+Tab indent and bring out; Backspace in an
+              // empty row removes it
+              child: Focus(
+                skipTraversal: true,
+                canRequestFocus: false,
+                onKeyEvent: (_, e) {
+                  if (!widget.editable || e is! KeyDownEvent) return KeyEventResult.ignored;
+                  if (e.logicalKey == LogicalKeyboardKey.tab) {
+                    widget.onIndent(!HardwareKeyboard.instance.isShiftPressed);
+                    return KeyEventResult.handled;
+                  }
+                  if (e.logicalKey == LogicalKeyboardKey.backspace && widget.controller.text.isEmpty) {
+                    widget.onRemoveEmpty();
+                    return KeyEventResult.handled;
+                  }
+                  return KeyEventResult.ignored;
+                },
+                child: TextField(
+                  readOnly: !widget.editable,
+                  controller: widget.controller,
+                  focusNode: widget.focusNode,
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    decoration: widget.checked ? TextDecoration.lineThrough : null,
+                    color: widget.checked ? theme.colorScheme.onSurfaceVariant : null,
+                  ),
+                  decoration: const InputDecoration(hintText: 'List item', isDense: true, border: InputBorder.none),
+                  textInputAction: TextInputAction.next,
+                  textCapitalization: TextCapitalization.sentences,
+                  onChanged: widget.onChanged,
+                  onSubmitted: (_) => widget.onSubmitted(),
                 ),
-                decoration: const InputDecoration(hintText: 'List item', isDense: true, border: InputBorder.none),
-                textInputAction: TextInputAction.next,
-                textCapitalization: TextCapitalization.sentences,
-                onChanged: widget.onChanged,
-                onSubmitted: (_) => widget.onSubmitted(),
               ),
             ),
+            // the row being edited can be indented or brought out (no Tab
+            // key on a phone)
+            if (editing && !widget.checked)
+              // part of the field's tap region: a tap here keeps the field
+              // (and so this button) rather than closing the keyboard
+              TextFieldTapRegion(
+                child: IconButton(
+                  tooltip: it.indent > 0 ? 'Bring out' : 'Indent',
+                  icon: Icon(it.indent > 0 ? Icons.format_indent_decrease : Icons.format_indent_increase),
+                  onPressed: () => widget.onIndent(it.indent == 0),
+                ),
+              ),
             AnimatedOpacity(
               opacity: active ? 1 : 0,
               duration: const Duration(milliseconds: 150),
@@ -876,5 +1061,44 @@ class _NoteBar extends StatelessWidget {
     return DateUtils.isSameDay(d, DateTime.now())
         ? time
         : '${MaterialLocalizations.of(context).formatShortMonthDay(d)}, $time';
+  }
+}
+
+/// A line at the top of a note saying why it cannot be changed (in the
+/// trash, shared to read), with what to do about it when there is something:
+/// a tonal strip, as a Material banner's message and action.
+class _Notice extends StatelessWidget {
+  const _Notice({required this.icon, required this.text, this.action, this.onAction});
+  final IconData icon;
+  final String text;
+  final String? action;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Material(
+        color: scheme.secondaryContainer,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(16, action == null ? 12 : 4, 8, action == null ? 12 : 4),
+          child: Row(
+            children: [
+              Icon(icon, size: 20, color: scheme.onSecondaryContainer),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  text,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: scheme.onSecondaryContainer),
+                ),
+              ),
+              if (action case final a?) TextButton(onPressed: onAction, child: Text(a)),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

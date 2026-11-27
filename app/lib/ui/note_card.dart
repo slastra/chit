@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../core/protocol.dart';
+import '../core/links.dart';
 import '../core/reminders.dart';
 import '../core/roles.dart';
 import '../data/replica.dart';
@@ -18,6 +19,7 @@ import 'note_colors.dart';
 import 'people.dart';
 import 'haptics.dart';
 import 'theme.dart';
+import 'links_ui.dart';
 
 /// A note on the grid: title, the start of the body or the open items, and
 /// small marks for pinned, reminder, shared and files. A plain note is an
@@ -133,7 +135,10 @@ class _NoteCardState extends ConsumerState<NoteCard> {
     final more = (allDone ? items.length : open.length) - _itemsShown;
     final showDone = note.isList && done > 0 && !allDone; // the list says it when all are done
     final labels = view.labels;
+    // a link the note holds, to open from the card itself
+    final link = linksIn(note.isList ? items.map((i) => i.text).join('\n') : note.body).firstOrNull;
     final hasFooter =
+        link != null ||
         reminder.isNotEmpty ||
         labels.isNotEmpty ||
         shared ||
@@ -239,6 +244,14 @@ class _NoteCardState extends ConsumerState<NoteCard> {
                           runSpacing: 8,
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
+                            if (link != null)
+                              _Mark(
+                                icon: Icons.link,
+                                label: link.host.replaceFirst(RegExp(r'^www\.'), ''),
+                                ink: faint,
+                                tooltip: 'Open ${linkLabel(link)}',
+                                onTap: () => unawaited(openLink(link)),
+                              ),
                             if (reminder.isNotEmpty)
                               _Mark(
                                 icon: Icons.alarm,
@@ -472,7 +485,8 @@ class _ItemLineState extends State<_ItemLine> {
       enter: widget.enter,
       onGone: _send,
       child: Padding(
-        padding: EdgeInsets.only(top: widget.topGap),
+        // an indented item sits under the one above, as in the editor
+        padding: EdgeInsets.only(top: widget.topGap, left: widget.item.indent * 20.0),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -515,11 +529,15 @@ class _ItemLineState extends State<_ItemLine> {
 }
 
 class _Mark extends StatelessWidget {
-  const _Mark({this.icon, this.label = '', required this.ink, this.tooltip});
+  const _Mark({this.icon, this.label = '', required this.ink, this.tooltip, this.onTap});
   final IconData? icon;
   final String label;
   final Color ink;
   final String? tooltip;
+
+  /// A mark that does something (a link opens), rather than tapping
+  /// through to the note.
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -531,7 +549,14 @@ class _Mark extends StatelessWidget {
         if (label.isNotEmpty) Text(label, style: Theme.of(context).textTheme.labelMedium?.copyWith(color: ink)),
       ],
     );
-    return tooltip == null ? mark : Tooltip(message: tooltip, child: mark);
+    final shown = onTap == null
+        ? mark
+        : InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2), child: mark),
+          );
+    return tooltip == null ? shown : Tooltip(message: tooltip, child: shown);
   }
 }
 

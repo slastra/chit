@@ -120,7 +120,13 @@ mixin _NoteActions on ConsumerState<HomePage> {
 
     void pin() {
       bump();
-      _apply([for (final id in ids) _op(Collections.noteState, id, 'pinned', !allPinned)]);
+      // notes changing sections land on top of their new one
+      _apply([
+        for (final id in ids) ...[
+          _op(Collections.noteState, id, 'pinned', !allPinned),
+          _op(Collections.noteState, id, 'order', ''),
+        ],
+      ]);
       _clearSelection();
     }
 
