@@ -30,11 +30,17 @@ String? openNoteId(GoRouter router) {
 Future<void> openNote(BuildContext context, String location) async {
   final router = GoRouter.of(context);
   if (isExpandedWidth(MediaQuery.sizeOf(context).width) && openNoteId(router) != null) {
+    // the pane stays where it is; only what is in it changes
+    _paneSwap = true;
     router.pushReplacement(location);
     return;
   }
   await router.push(location);
 }
+
+/// Set by [openNote] when a note takes the place of the one in the pane:
+/// the next pane route swaps in rather than arriving.
+bool _paneSwap = false;
 
 // ---- where notes open from -------------------------------------------------------
 
@@ -323,11 +329,21 @@ class NotePanePage extends Page<void> {
   final Widget child;
 
   @override
-  Route<void> createRoute(BuildContext context) => _NotePaneRoute(this);
+  Route<void> createRoute(BuildContext context) {
+    final swap = _paneSwap;
+    _paneSwap = false;
+    return _NotePaneRoute(this, swap: swap);
+  }
 }
 
 class _NotePaneRoute extends PageRoute<void> {
-  _NotePaneRoute(NotePanePage page) : super(settings: page);
+  _NotePaneRoute(NotePanePage page, {required this.swap}) : super(settings: page);
+
+  /// Taking the place of the note already in the pane: the pane itself does
+  /// not move (it is drawn, whole and opaque, over the old one from the
+  /// first frame), and its content fades through, as Material swaps the
+  /// content of a container that stays.
+  final bool swap;
 
   @override
   bool get opaque => false;
@@ -341,7 +357,7 @@ class _NotePaneRoute extends PageRoute<void> {
   bool get barrierDismissible => false;
 
   @override
-  Duration get transitionDuration => Durations.medium4;
+  Duration get transitionDuration => swap ? Durations.medium2 : Durations.medium4;
   @override
   Duration get reverseTransitionDuration => Durations.short4;
 
@@ -368,7 +384,26 @@ class _NotePaneRoute extends PageRoute<void> {
                 color: theme.colorScheme.surfaceContainerHigh,
                 shape: theme.dialogTheme.shape ?? RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
                 clipBehavior: Clip.antiAlias,
-                child: (settings as NotePanePage).child,
+                child: !swap
+                    ? (settings as NotePanePage).child
+                    // fade through: the incoming note fades in and settles
+                    // from 92% scale, after a beat in which the pane is empty
+                    : FadeTransition(
+                        opacity: CurvedAnimation(
+                          parent: animation,
+                          curve: const Interval(0.3, 1, curve: Curves.easeOut),
+                        ),
+                        child: ScaleTransition(
+                          scale: Tween(begin: 0.92, end: 1.0).animate(
+                            CurvedAnimation(
+                              parent: animation,
+                              curve: const Interval(0.3, 1, curve: Easing.emphasizedDecelerate),
+                            ),
+                          ),
+                          alignment: Alignment.topCenter,
+                          child: (settings as NotePanePage).child,
+                        ),
+                      ),
               ),
             ),
           ),
@@ -385,6 +420,10 @@ class _NotePaneRoute extends PageRoute<void> {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
+    // a swap leaves the pane where it is (buildPage fades its content), until
+    // it closes like any pane. The same widgets either way, so the note in
+    // it is not built anew as it starts to close
+    if (swap && animation.status != AnimationStatus.reverse) animation = kAlwaysCompleteAnimation;
     final rtl = Directionality.of(context) == TextDirection.rtl;
     final slide = Tween(begin: Offset(rtl ? -0.12 : 0.12, 0), end: Offset.zero).animate(
       CurvedAnimation(parent: animation, curve: Easing.emphasizedDecelerate, reverseCurve: Easing.emphasizedAccelerate),
