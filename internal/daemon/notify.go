@@ -144,6 +144,16 @@ func (n *noter) run(ctx context.Context) {
 			t.Stop()
 			return
 		case <-n.rescanCh:
+			// a burst of changes (a catch-up, a sync of many notes) is
+			// one rescan, not one per change
+			settle := time.NewTimer(rescanSettle)
+			select {
+			case <-ctx.Done():
+				settle.Stop()
+				t.Stop()
+				return
+			case <-settle.C:
+			}
 		case <-t.C:
 		}
 		t.Stop()
@@ -160,6 +170,10 @@ func parseTime(s string) (time.Time, bool) {
 	return time.Time{}, false
 }
 
+// rescanSettle is how long the reminder loop waits after a change for more
+// to arrive before it scans.
+const rescanSettle = 200 * time.Millisecond
+
 // missedWindow is how late a reminder may still fire (the desk was off).
 const missedWindow = 12 * time.Hour
 
@@ -173,16 +187,15 @@ func (n *noter) checkReminders() time.Time {
 	now := n.now()
 	active := map[string]string{} // note -> reminder still pending
 	var next time.Time
+	byID := make(map[string]*protocol.Note, len(s.Notes))
+	for i := range s.Notes {
+		byID[s.Notes[i].ID] = &s.Notes[i]
+	}
 	for _, st := range s.State {
 		if st.Reminder == "" || st.ReminderDone {
 			continue
 		}
-		var note *protocol.Note
-		for i := range s.Notes {
-			if s.Notes[i].ID == st.Note {
-				note = &s.Notes[i]
-			}
-		}
+		note := byID[st.Note]
 		if note == nil || note.Trashed != "" {
 			continue
 		}
@@ -374,7 +387,8 @@ func (n *noter) flush(key string) {
 	}
 }
 
-// flushAll shows every pending group now (tests, shutdown).
+// flushAll shows every pending group now, for tests (at shutdown pending
+// groups are dropped: a toast as the desk goes down helps no one).
 func (n *noter) flushAll() {
 	n.mu.Lock()
 	keys := make([]string, 0, len(n.groups))

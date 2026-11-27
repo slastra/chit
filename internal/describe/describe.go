@@ -94,9 +94,6 @@ func (w *Describer) NoteOf(c protocol.Change) string {
 // Title is the note's current title as the Describer knows it.
 func (w *Describer) Title(noteID string) string { return w.title(noteID) }
 
-// Who names a user: "You" for the reader.
-func (w *Describer) Who(id string) string { return w.who(id) }
-
 // Describe returns the sentence for a change, or "" for changes not worth
 // a line (reorders of already-known records and the like).
 func (w *Describer) Describe(c protocol.Change) string {
