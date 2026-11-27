@@ -258,14 +258,34 @@ class RenderMasonry extends RenderBox
   /// Where the children would rest in [order] (boxes of this grid).
   List<Rect> preview(List<RenderBox> order) => _place([for (final c in order) _boxOf(c)]);
 
+  /// The width the grid is asked to fill, and the spring easing the width it
+  /// lays out at ([_width]) toward it: a resize is not a jump. Cards stretch
+  /// and slide with the easing width, and glide to their new places when it
+  /// crosses into another column count.
+  double _asked = -1;
+  SpringSimulation? _widening;
+  Duration _wideningStart = Duration.zero;
+
   @override
   void performLayout() {
-    final width = constraints.maxWidth;
+    final asked = constraints.maxWidth;
+    if (_width < 0 || !_animate) {
+      _width = asked;
+      _widening = null;
+    } else if (asked != _asked) {
+      // from where it is, at the speed it has: a resize in mid-ease, or a
+      // window dragged wider, carries on smoothly. No overshoot: a card
+      // should not poke past the grid's edge
+      final v = _widening?.dx(_seconds(_now - _wideningStart)) ?? 0;
+      _widening = SpringSimulation(Springs.standardDefaultEffects, _width, asked, v);
+      _wideningStart = _now;
+    }
+    _asked = asked;
+    final width = _width;
     final columns = columnsFor(width);
-    // a new width with the same columns only stretches cards: snap, or
-    // they would overlap on the way; a new column count is a real move
-    final snap = !_animate || (_width >= 0 && width != _width && columns == _columns);
-    _width = width;
+    // the same columns at a new width only stretches cards, which follow
+    // their places directly; a new column count is a real move, and glides
+    final snap = !_animate;
     _columns = columns;
     final colWidth = columnWidth;
 
@@ -313,8 +333,8 @@ class RenderMasonry extends RenderBox
         ..column = col
         ..above = above;
     }
-    size = constraints.constrain(Size(width, bottom));
-    if (_anyMoving) _ensureTicking();
+    size = constraints.constrain(Size(asked, bottom));
+    if (_anyMoving || _widening != null) _ensureTicking();
   }
 
   void _springTo(MasonryData d, Offset to) {
@@ -340,6 +360,7 @@ class RenderMasonry extends RenderBox
       for (final c in _children) {
         (c.parentData! as MasonryData)._start = Duration.zero;
       }
+      _wideningStart = Duration.zero;
       ticker.start();
     }
   }
@@ -347,6 +368,17 @@ class RenderMasonry extends RenderBox
   void _tick(Duration elapsed) {
     _now = elapsed;
     var active = false;
+    if (_widening case final w?) {
+      final t = _seconds(elapsed - _wideningStart);
+      if (w.isDone(t)) {
+        _width = _asked;
+        _widening = null;
+      } else {
+        _width = w.x(t);
+        active = true;
+      }
+      markNeedsLayout();
+    }
     for (final c in _children) {
       final d = c.parentData! as MasonryData;
       final x = d._x, y = d._y;
@@ -370,6 +402,11 @@ class RenderMasonry extends RenderBox
   }
 
   void _settleAll() {
+    if (_widening != null) {
+      _widening = null;
+      _width = _asked;
+      markNeedsLayout();
+    }
     for (final c in _children) {
       final d = c.parentData! as MasonryData;
       d
@@ -384,7 +421,7 @@ class RenderMasonry extends RenderBox
   @override
   void attach(PipelineOwner owner) {
     super.attach(owner);
-    if (_anyMoving) _ensureTicking();
+    if (_anyMoving || _widening != null) _ensureTicking();
   }
 
   @override

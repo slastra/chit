@@ -160,4 +160,45 @@ void main() {
     expect(tapped, ['b', 'c']);
     expect(grid.preview([for (final x in grid.targets) x.box]).last, rest['c']);
   });
+
+  testWidgets('a resize eases: cards stretch and glide, they do not jump', (t) async {
+    Widget sized(double width) => Directionality(
+      textDirection: TextDirection.ltr,
+      child: Align(
+        alignment: Alignment.topLeft,
+        child: SizedBox(
+          width: width,
+          child: Masonry(
+            minColumnWidth: 180,
+            spacing: 8,
+            children: [
+              for (final id in ['a', 'b', 'c'])
+                MasonryChild(
+                  key: ValueKey(id),
+                  tag: id,
+                  child: SizedBox(height: 100, child: Text(id)),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    Rect rect(String id) => t.getRect(find.byKey(ValueKey(id)));
+    // two 196-wide columns in 400; three in 596
+    await t.pumpWidget(sized(400));
+    expect(rect('c'), const Rect.fromLTWH(0, 108, 196, 100));
+    await t.pumpWidget(sized(596));
+    await t.pump(const Duration(milliseconds: 16));
+    // on its way: wider than it was, not yet where it will be
+    expect(rect('b').width, greaterThan(196));
+    expect(rect('b').right, lessThan(596));
+    await t.pumpAndSettle();
+    expect(rect('a'), const Rect.fromLTWH(0, 0, 193.33333333333334, 100));
+    expect(rect('c').top, 0);
+    expect(rect('c').left, closeTo(402.67, 0.01));
+    // and back, through a shrink
+    await t.pumpWidget(sized(400));
+    await t.pumpAndSettle();
+    expect(rect('c'), const Rect.fromLTWH(0, 108, 196, 100));
+  });
 }
