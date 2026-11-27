@@ -91,7 +91,7 @@ Future<void> _run(String task) async {
         );
         debugPrint('chit background $task: $applied changes');
       }
-      await flushOnce(replica, api);
+      await flushAndHeal(replica, api);
       await syncReminders(replica, await replica.read());
     } finally {
       api.close();
@@ -131,7 +131,7 @@ Future<void> notificationActionInBackground(NotificationResponse r) async {
     await syncReminders(replica, await replica.read());
     final api = ChitApi(server: session.server, token: session.token, device: session.device);
     try {
-      await flushOnce(replica, api).timeout(const Duration(seconds: 6));
+      await flushAndHeal(replica, api).timeout(const Duration(seconds: 6));
     } catch (_) {
       await Workmanager().initialize(callbackDispatcher);
       await Workmanager().registerOneOffTask(

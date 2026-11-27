@@ -102,6 +102,37 @@ void main() {
     expect(await r.pending(), isEmpty);
   });
 
+  test('flushAndHeal reloads the snapshot when an op is refused, undoing it here', () async {
+    final r = await fresh();
+    await r.applyLocal([
+      Op(collection: Collections.notes, id: 'n9', field: 'kind', value: 'text', hlc: '1795651200000-0000-me'),
+    ], me);
+    expect((await r.read()).notes, hasLength(1));
+    final asked = <String>[];
+    final api = ChitApi(
+      server: 'https://chit.example',
+      client: MockClient((req) async {
+        asked.add(req.url.path.split('/').last);
+        if (req.url.path.endsWith('/ops')) {
+          return http.Response(
+            jsonEncode({
+              'seq': 5,
+              'results': [
+                {'error': 'viewers cannot edit'},
+              ],
+            }),
+            200,
+          );
+        }
+        return http.Response(jsonEncode({'seq': 7}), 200);
+      }),
+    );
+    await flushAndHeal(r, api);
+    expect(asked, ['ops', 'snapshot']);
+    expect((await r.read()).notes, isEmpty);
+    expect(await r.cursor(), 7);
+  });
+
   test('two connections to one file wait for each other instead of failing', () async {
     final dir = await Directory.systemTemp.createTemp('chit-wal');
     final file = File('${dir.path}/chit.sqlite');

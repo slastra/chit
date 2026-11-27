@@ -128,4 +128,60 @@ void main() {
     expect(clock.now().compareTo(late), greaterThan(0));
     await engine.stop();
   });
+
+  test('a refused op resyncs by ending the stream, then streaming from the snapshot', () async {
+    final replica = await fresh();
+    final asked = <String>[];
+    final streams = <StreamController<List<int>>>[];
+    final api = ChitApi(
+      server: 'https://chit.example',
+      token: 'x',
+      client: MockClient.streaming((req, _) async {
+        final path = req.url.path;
+        if (path.endsWith('/stream')) {
+          asked.add('stream ${req.url.queryParameters['since']}');
+          final body = StreamController<List<int>>();
+          streams.add(body);
+          return http.StreamedResponse(body.stream, 200);
+        }
+        if (path.endsWith('/ops')) {
+          asked.add('ops');
+          return http.StreamedResponse(
+            Stream.value(
+              utf8.encode(
+                jsonEncode({
+                  'seq': 9,
+                  'results': [
+                    {'error': 'viewers cannot edit'},
+                  ],
+                }),
+              ),
+            ),
+            200,
+          );
+        }
+        if (path.endsWith('/snapshot')) {
+          asked.add('snapshot');
+          return http.StreamedResponse(Stream.value(utf8.encode(jsonEncode({'seq': 40}))), 200);
+        }
+        return http.StreamedResponse(Stream.value(utf8.encode('{}')), 200);
+      }),
+    );
+    final engine = SyncEngine(replica: replica, api: api, me: me, clock: HlcClock('dev00001'));
+    await engine.start();
+    await pumpEventQueue(times: 50);
+    expect(asked, ['stream 1']);
+
+    await engine.edit([engine.op(Collections.notes, 'n1', 'title', 'Mine')]);
+    await pumpEventQueue(times: 200);
+
+    // the first stream ended before the snapshot, and the next began at its seq
+    expect(asked, ['stream 1', 'ops', 'snapshot', 'stream 40']);
+    expect(await replica.cursor(), 40);
+
+    for (final b in streams) {
+      await b.close();
+    }
+    await engine.stop();
+  });
 }

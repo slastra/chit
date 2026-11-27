@@ -59,3 +59,11 @@ Future<bool> flushOnce(Replica replica, ChitApi api) async {
     if (resp.results.any((r) => r.error != null)) refused = true;
   }
 }
+
+/// [flushOnce], then, if the server refused anything, the snapshot again:
+/// a refused op was applied here and the server will never take it, so
+/// only a fresh copy undoes it (the engine does the same, between streams).
+/// For the background, which has no stream running.
+Future<void> flushAndHeal(Replica replica, ChitApi api) async {
+  if (await flushOnce(replica, api)) await replica.replaceAll(await api.snapshot());
+}

@@ -86,8 +86,10 @@ func (d *Daemon) flushUploads(ctx context.Context, c *client.Client) (int, error
 	resp, err := c.Upload(ctx, u.Note, u.ID, u.Path)
 	if err != nil {
 		var ae *client.APIError
-		if errors.As(err, &ae) && ae.Status >= 400 && ae.Status < 500 {
-			// Refused for good (too big, the note is gone, no permission).
+		if errors.As(err, &ae) && ae.Status >= 400 && ae.Status < 500 && ae.Status != 408 && ae.Status != 429 {
+			// Refused for good (too big, the note is gone, no permission);
+			// a timeout or a rate limit is worth another try, as the app
+			// treats them.
 			d.logf("upload of %s refused: %v", filepath.Base(u.Path), err)
 			_ = d.rep.FinishUpload(u.ID, nil)
 			_ = os.RemoveAll(filepath.Dir(u.Path))

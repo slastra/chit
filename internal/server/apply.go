@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"sort"
 	"time"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/tools/types"
 
 	"github.com/slastra/chit/internal/hlc"
 	"github.com/slastra/chit/internal/order"
@@ -73,10 +75,21 @@ var specs = map[string]map[string]field{
 
 func decode(k kind, raw json.RawMessage) (any, error) {
 	switch k {
-	case kText, kDate:
+	case kText:
 		var s string
 		err := json.Unmarshal(raw, &s)
 		return s, err
+	case kDate:
+		// "" clears it; anything else must be a date, or PocketBase would
+		// quietly store a cleared one in its place
+		var s string
+		if err := json.Unmarshal(raw, &s); err != nil {
+			return nil, err
+		}
+		if s != "" && !validDate(s) {
+			return nil, fmt.Errorf("%q is not a date (RFC 3339, in UTC)", s)
+		}
+		return s, nil
 	case kBool:
 		var b bool
 		err := json.Unmarshal(raw, &b)
@@ -94,6 +107,17 @@ func decode(k kind, raw json.RawMessage) (any, error) {
 		return ss, err
 	}
 	return nil, errors.New("unknown field kind")
+}
+
+// validDate reports whether s is a date the clients write: RFC 3339 (the
+// apps and the CLI) or PocketBase's own layout.
+func validDate(s string) bool {
+	for _, layout := range []string{time.RFC3339Nano, types.DefaultDateLayout} {
+		if _, err := time.Parse(layout, s); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // group is the ops for one record, kept in request order.
@@ -115,6 +139,11 @@ func groupOps(ops []protocol.Op) []*group {
 		}
 		g.idx = append(g.idx, i)
 	}
+	// Records others hang on go first: a new note before its items, state
+	// and files, a new label before the state that uses it, whatever order
+	// the batch came in. Otherwise request order, record by record.
+	first := func(g *group) bool { return g.collection == protocol.Notes || g.collection == protocol.Labels }
+	sort.SliceStable(order, func(i, j int) bool { return first(order[i]) && !first(order[j]) })
 	return order
 }
 

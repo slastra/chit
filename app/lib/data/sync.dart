@@ -68,6 +68,11 @@ final class SyncEngine {
   StreamSubscription<void>? _sub;
   Completer<void>? _wake;
   bool _flushing = false;
+
+  /// A rejected op asked for a fresh snapshot: the stream ends, and the
+  /// loop loads one before it streams again.
+  bool _resync = false;
+  Completer<void>? _streamDone;
   bool _flushAgain = false;
   Timer? _retry;
 
@@ -107,6 +112,16 @@ final class SyncEngine {
     await _status.close();
   }
 
+  /// Ends the stream so the loop reloads the snapshot (the server refused
+  /// an op, which the reload undoes here) and streams from there.
+  void _resyncSoon() {
+    _resync = true;
+    unawaited(_sub?.cancel());
+    final done = _streamDone;
+    if (done != null && !done.isCompleted) done.complete();
+    nudge();
+  }
+
   /// Reconnects right away (the app came back to the foreground, the
   /// network returned).
   void nudge() {
@@ -118,9 +133,17 @@ final class SyncEngine {
     await _refreshToken();
     while (_running) {
       try {
+        if (_resync) {
+          // Back to a snapshot, then a stream from its seq. Loading one
+          // under an open stream would lose a change the stream delivered
+          // after the snapshot was taken: the cursor goes back to the
+          // snapshot's, and the open stream never sends that change again.
+          _resync = false;
+          await replica.resetCursor();
+        }
         if (await replica.cursor() == 0) await _loadSnapshot();
         _set(SyncPhase.connecting);
-        final done = Completer<void>();
+        final done = _streamDone = Completer<void>();
         void fail(Object e) {
           if (!done.isCompleted) done.completeError(e);
           unawaited(_sub?.cancel());
@@ -161,7 +184,11 @@ final class SyncEngine {
               cancelOnError: true,
             );
         await done.future;
+        // whatever the stream delivered has landed before anything else
+        await tail.catchError((_) {});
         if (!_running) return;
+        // a resync: straight back round, to the snapshot
+        if (_resync) continue;
         _set(SyncPhase.offline, 'disconnected');
       } on Unauthorized {
         _set(SyncPhase.signedOut, 'signed out');
@@ -321,7 +348,7 @@ final class SyncEngine {
     try {
       do {
         _flushAgain = false;
-        if (_running && await flushOnce(replica, api)) await _loadSnapshot();
+        if (_running && await flushOnce(replica, api)) _resyncSoon();
       } while (_flushAgain && _running);
       // the notes now exist on the server, so their files can follow
       if (_running) unawaited(sendUploads());

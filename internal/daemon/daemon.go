@@ -14,6 +14,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/slastra/chit/internal/client"
@@ -275,18 +276,18 @@ func (d *Daemon) syncLoop(ctx context.Context) {
 		}
 
 		streamCtx, cancel := context.WithCancel(ctx)
+		// A resync request (a rejected op) ends the stream, and the loop
+		// starts over from a snapshot. Loading one under the running stream
+		// would lose any change the stream delivered after the snapshot's
+		// seq: the snapshot's cursor goes back, but the open stream has
+		// already moved past it and never sends that change again.
+		var resyncing atomic.Bool
 		go func() {
-			// A resync request (a rejected op) reloads the snapshot under
-			// the running stream; LWW makes the overlap harmless.
-			for {
-				select {
-				case <-streamCtx.Done():
-					return
-				case <-d.resync:
-					if err := d.loadSnapshot(streamCtx, c); err != nil {
-						d.logf("resync: %v", err)
-					}
-				}
+			select {
+			case <-streamCtx.Done():
+			case <-d.resync:
+				resyncing.Store(true)
+				cancel()
 			}
 		}()
 		err = c.StreamWith(streamCtx, cursor, func(ch protocol.Change) error {
@@ -314,6 +315,14 @@ func (d *Daemon) syncLoop(ctx context.Context) {
 		cancel()
 		if ctx.Err() != nil {
 			return
+		}
+		if resyncing.Load() {
+			// the stream has stopped and nothing is applying: back to a
+			// snapshot, at once
+			if err := d.rep.ApplyChanges(nil, 0); err != nil {
+				d.logf("resync: %v", err)
+			}
+			continue
 		}
 		if errors.Is(err, client.ErrUnauthorized) {
 			d.mu.Lock()

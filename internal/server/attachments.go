@@ -29,7 +29,7 @@ func attach(app core.App, me *core.Record, device, noteID, id string, f *filesys
 		if err != nil {
 			return err
 		}
-		if note == nil || acc == noAccess {
+		if note == nil || acc == noAccess || note.GetBool("deleted") {
 			return errNotFound
 		}
 		if acc < canEdit {

@@ -77,7 +77,10 @@ func (NotifySend) Show(ctx context.Context, t Toast, onAction func(string)) (uin
 }
 
 func (NotifySend) Close(id uint32) error {
-	return exec.Command("gdbus", "call", "--session", "--dest", "org.freedesktop.Notifications",
+	// bounded: a hung notification daemon must not stall the reminder loop
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return exec.CommandContext(ctx, "gdbus", "call", "--session", "--dest", "org.freedesktop.Notifications",
 		"--object-path", "/org/freedesktop/Notifications",
 		"--method", "org.freedesktop.Notifications.CloseNotification", strconv.FormatUint(uint64(id), 10)).Run()
 }

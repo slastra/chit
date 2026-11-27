@@ -21,6 +21,9 @@ final class Replica {
   Future<void> setMeta(String key, String value) =>
       db.into(db.meta).insertOnConflictUpdate(MetaCompanion.insert(key: key, value: value));
 
+  /// Forgets the feed position, so the next sync starts from a snapshot.
+  Future<void> resetCursor() => setMeta('cursor', '0');
+
   Future<int> cursor() async => int.tryParse(await meta('cursor') ?? '') ?? 0;
 
   /// Forgets every record, the outbox and the cursor (another account or

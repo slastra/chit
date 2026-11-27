@@ -29,7 +29,7 @@ func share(app core.App, me *core.Record, device, noteID, userID, role string) (
 		if err != nil {
 			return err
 		}
-		if note == nil || acc == noAccess {
+		if note == nil || acc == noAccess || note.GetBool("deleted") {
 			return errNotFound
 		}
 		if acc != isOwner {
