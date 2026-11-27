@@ -166,6 +166,33 @@ void openAttachment(BuildContext context, Attachment a) => a.kind == MediaKind.a
     ? unawaited(showAudioPlayer(context, a))
     : unawaited(context.push('/note/${a.note}/file/${a.id}'));
 
+/// A picture that flies between its place in a note and the viewer (a
+/// shared element): on the way it turns from the tile's crop into the
+/// whole picture, its corners squaring off.
+Widget pictureHero(Attachment a, {required Widget child}) => Hero(
+  tag: 'picture/${a.id}',
+  flightShuttleBuilder: (context, animation, direction, from, to) => AnimatedBuilder(
+    animation: animation,
+    builder: (context, _) {
+      // 0 at the tile, 1 in the viewer, either way round
+      final t = Curves.easeInOut.transform(animation.value);
+      Widget picture(BoxFit fit) =>
+          AttachmentImage(a, thumb: '1080x0', fit: fit, width: double.infinity, height: double.infinity);
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(28 * (1 - t)),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Opacity(opacity: 1 - t, child: picture(BoxFit.cover)),
+            Opacity(opacity: t, child: picture(BoxFit.contain)),
+          ],
+        ),
+      );
+    },
+  ),
+  child: child,
+);
+
 /// A note's images: one whole, at its own shape; several as Material's
 /// multi-browse carousel. Each opens the viewer.
 class NoteImages extends StatelessWidget {
@@ -184,7 +211,10 @@ class NoteImages extends StatelessWidget {
         onTap: () => openAttachment(context, a),
         child: Stack(
           children: [
-            AttachmentImage(a, thumb: thumb, width: width, height: height, placeholderHeight: 200),
+            pictureHero(
+              a,
+              child: AttachmentImage(a, thumb: thumb, width: width, height: height, placeholderHeight: 200),
+            ),
             Positioned(right: 8, bottom: 8, child: UploadMark(a, onImage: true)),
           ],
         ),
@@ -230,7 +260,10 @@ class NoteImages extends StatelessWidget {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    AttachmentImage(a, thumb: '1080x0', width: double.infinity, height: carouselHeight),
+                    pictureHero(
+                      a,
+                      child: AttachmentImage(a, thumb: '1080x0', width: double.infinity, height: carouselHeight),
+                    ),
                     Positioned(right: 12, bottom: 12, child: UploadMark(a, onImage: true)),
                   ],
                 ),
@@ -477,7 +510,7 @@ class AudioProgress extends ConsumerWidget {
           builder: (context, loading, _) => loading != null
               ? Padding(
                   padding: const EdgeInsets.fromLTRB(72, 0, 24, 12),
-                  child: LinearProgressIndicator(value: loading == 0 ? null : loading),
+                  child: WavyProgress(value: loading == 0 ? null : loading),
                 )
               : Padding(
                   padding: const EdgeInsets.only(left: 56, right: 8),

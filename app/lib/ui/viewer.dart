@@ -13,6 +13,7 @@ import '../data/media.dart';
 import '../data/replica.dart';
 import '../state/providers.dart';
 import 'attachments.dart';
+import 'expressive.dart';
 import 'media_player.dart';
 import 'feedback.dart';
 import 'app.dart' show themeSpecProvider;
@@ -234,7 +235,7 @@ class _FetchedState extends ConsumerState<_Fetched> {
         }
         if (snap.data case final source?) return widget.builder(context, source);
         return Center(
-          child: SizedBox(width: 200, child: LinearProgressIndicator(value: _progress == 0 ? null : _progress)),
+          child: SizedBox(width: 200, child: WavyProgress(value: _progress == 0 ? null : _progress)),
         );
       },
     );
@@ -255,7 +256,10 @@ class _Images extends StatelessWidget {
     itemBuilder: (context, i) => InteractiveViewer(
       maxScale: 6,
       child: Center(
-        child: AttachmentImage(images[i], fit: BoxFit.contain, width: double.infinity, height: double.infinity),
+        child: pictureHero(
+          images[i],
+          child: AttachmentImage(images[i], fit: BoxFit.contain, width: double.infinity, height: double.infinity),
+        ),
       ),
     ),
   );

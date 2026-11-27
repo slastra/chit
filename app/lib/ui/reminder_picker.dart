@@ -29,8 +29,8 @@ Future<DateTime?> pickReminder(BuildContext context, {DateTime? initial}) async 
   return DateTime(day.year, day.month, day.day, time.hour, time.minute);
 }
 
-/// The ways to set a reminder: Keep's presets, a date and time of your
-/// own, and removing one that is set.
+/// The ways to set a reminder: a few presets, a date and time of your own,
+/// and removing one that is set.
 List<({String label, String detail, IconData icon, FutureOr<void> Function(BuildContext) run})> _choices({
   required DateTime? current,
   required ValueChanged<DateTime> onSet,
@@ -48,6 +48,22 @@ List<({String label, String detail, IconData icon, FutureOr<void> Function(Build
     },
   ),
   if (current != null) (label: 'Remove reminder', detail: '', icon: Icons.alarm_off, run: (_) => onClear()),
+];
+
+/// The reminder choices as menu items (a menu button's, a context menu's).
+List<Widget> reminderMenuItems(
+  BuildContext context, {
+  required DateTime? current,
+  required ValueChanged<DateTime> onSet,
+  required VoidCallback onClear,
+}) => [
+  for (final c in _choices(current: current, onSet: onSet, onClear: onClear))
+    MenuItemButton(
+      leadingIcon: Icon(c.icon),
+      trailingIcon: c.detail.isEmpty ? null : Text(c.detail),
+      onPressed: () => c.run(context),
+      child: Text(c.label),
+    ),
 ];
 
 /// The note's reminder button: a menu beside it on expanded windows, a

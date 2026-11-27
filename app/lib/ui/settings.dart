@@ -7,6 +7,7 @@ import 'package:material_ui/material_ui.dart';
 import '../notifications.dart';
 import '../state/providers.dart';
 import 'expressive.dart';
+import 'haptics.dart';
 import 'home_page.dart' show isExpanded;
 import 'labels_ui.dart';
 
@@ -110,6 +111,7 @@ class _Settings extends ConsumerWidget {
                 subtitle: const Text('When someone changes a note shared with you'),
                 value: ref.watch(_notifyActivityProvider).value ?? true,
                 onChanged: (v) async {
+                  tick();
                   await setActivityEnabled(ref.read(replicaProvider), v);
                   if (v) await askNotificationPermission();
                   ref.invalidate(_notifyActivityProvider);

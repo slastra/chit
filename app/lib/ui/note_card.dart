@@ -31,6 +31,7 @@ class NoteCard extends ConsumerStatefulWidget {
     this.selected = false,
     this.selecting = false,
     this.onSelect,
+    this.onMenu,
     this.longPressSelects = false,
     this.overhang = 0,
     this.open = false,
@@ -52,6 +53,9 @@ class NoteCard extends ConsumerStatefulWidget {
   final bool selected;
   final bool selecting;
   final VoidCallback? onSelect;
+
+  /// A right click on the card, with where the pointer was (globally).
+  final ValueChanged<Offset>? onMenu;
 
   /// A long press selects (where it doesn't lift the card for a drag).
   final bool longPressSelects;
@@ -144,6 +148,7 @@ class _NoteCardState extends ConsumerState<NoteCard> {
         }
       },
       onLongPress: widget.longPressSelects ? select : null,
+      onSecondaryTapUp: widget.onMenu == null ? null : (d) => widget.onMenu!(d.globalPosition),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

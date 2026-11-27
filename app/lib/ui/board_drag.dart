@@ -110,6 +110,7 @@ class BoardDrag extends ChangeNotifier {
     if (phase != DragPhase.lifted) return;
     _scroller?.stopAutoScroll();
     final moved = id!, landed = anchor!, from = _origin!;
+    unawaited(HapticFeedback.lightImpact());
     _settle(() {
       if (landed != from) onDrop(moved, landed);
     });

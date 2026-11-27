@@ -21,6 +21,7 @@ import 'brand.dart';
 import 'create.dart';
 import 'expressive.dart';
 import 'feedback.dart';
+import 'haptics.dart';
 import 'labels_ui.dart';
 import 'note_colors.dart';
 import 'reminder_picker.dart';
@@ -79,6 +80,8 @@ class _HomePageState extends ConsumerState<HomePage> {
   final _selectionFocus = FocusNode(debugLabel: 'selection');
 
   void _toggle(String id, {bool? on}) {
+    // a tap's toggle is felt; a lift already was
+    if (on == null) tick();
     setState(() {
       if (on ?? !_selected.contains(id)) {
         _selected.add(id);
@@ -91,6 +94,22 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 
   void _clearSelection() => setState(_selected.clear);
+
+  /// The card menu (a right click): one menu for the board, opened where
+  /// the pointer is, for the note it was opened on.
+  final _cardMenu = MenuController();
+  final _cardMenuKey = GlobalKey();
+  String? _menuNote;
+
+  void _openCardMenu(String id, Offset at) {
+    setState(() => _menuNote = id);
+    // once the menu has that note's items
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final anchor = _cardMenuKey.currentContext?.findRenderObject();
+      if (anchor is RenderBox && anchor.attached) _cardMenu.open(position: anchor.globalToLocal(at));
+    });
+  }
+
   String _query = '';
   final _filters = <NoteFilter>{};
 
@@ -418,6 +437,7 @@ class _HomePageState extends ConsumerState<HomePage> {
             selected: selected.contains(n.id),
             selecting: selected.isNotEmpty,
             onSelect: () => _toggle(n.id),
+            onMenu: (at) => _openCardMenu(n.id, at),
             // where a long press lifts the card, lifting selects it
             longPressSelects: !canDrag,
           ),
@@ -431,7 +451,7 @@ class _HomePageState extends ConsumerState<HomePage> {
     // Reminders heads its passed ones even with nothing still to come
     final showSecond =
         (showPinned && (others.isNotEmpty || dragging)) || (_shelf == Shelf.reminders && others.isNotEmpty);
-    final grid = BoardGestures(
+    final board = BoardGestures(
       drag: _drag,
       enabled: canDrag,
       onLifted: (id) => _toggle(id, on: true),
@@ -466,6 +486,20 @@ class _HomePageState extends ConsumerState<HomePage> {
       ),
     );
 
+    // a right click's menu acts on the selection the card is part of, or
+    // on the card alone
+    final menuIds = switch (_menuNote) {
+      final id? when selected.contains(id) => selected.toList(),
+      final id? when byId.containsKey(id) => [id],
+      _ => const <String>[],
+    };
+    final grid = MenuAnchor(
+      key: _cardMenuKey,
+      controller: _cardMenu,
+      menuChildren: menuIds.isEmpty ? const [] : _noteActions(lib, menuIds, shown, menu: true),
+      child: board,
+    );
+
     final content = CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
@@ -485,17 +519,23 @@ class _HomePageState extends ConsumerState<HomePage> {
                 _ => 'Search ${_shelf.label.toLowerCase()}',
               },
               elevation: const WidgetStatePropertyAll(0),
-              leading: !compact
-                  ? Padding(
+              // compact windows have no navigation to open: Reminders and
+              // the labels are chips below, Archive and Trash are in the
+              // account menu, and from those two this leads back to Notes
+              leading: compact && (_shelf == Shelf.archive || _shelf == Shelf.trash)
+                  ? IconButton(
+                      icon: const Icon(Icons.arrow_back),
+                      tooltip: 'Back to notes',
+                      onPressed: () => _pick(Shelf.notes),
+                    )
+                  : Padding(
                       padding: const EdgeInsets.all(8),
                       child: Icon(Icons.search, color: theme.colorScheme.onSurface),
-                    )
-                  : IconButton(
-                      icon: const Icon(Icons.menu),
-                      tooltip: 'Open navigation',
-                      onPressed: () => _scaffold.currentState?.openDrawer(),
                     ),
-              trailing: const [_SyncMark(), _Account()],
+              trailing: [
+                const _SyncMark(),
+                _Account(onPick: compact ? _pick : null),
+              ],
               onChanged: (v) => setState(() => _query = v),
             ),
           ),
@@ -508,9 +548,15 @@ class _HomePageState extends ConsumerState<HomePage> {
                   child: _FilterChips(
                     margin: margin,
                     filters: _filters,
-                    onFilter: (f, on) => setState(() => on ? _filters.add(f) : _filters.remove(f)),
-                    // labels are shelves of their own, reached from Notes
-                    labels: _shelf == Shelf.notes || _shelf == Shelf.labeled ? lib.labels : const [],
+                    onFilter: (f, on) {
+                      tick();
+                      setState(() => on ? _filters.add(f) : _filters.remove(f));
+                    },
+                    // Reminders and the labels are shelves of their own,
+                    // reached from Notes (and from each other)
+                    reminders: _shelf == Shelf.archive ? null : _shelf == Shelf.reminders,
+                    onReminders: (on) => _pick(on ? Shelf.reminders : Shelf.notes),
+                    labels: _shelf == Shelf.archive ? const [] : lib.labels,
                     label: _shelf == Shelf.labeled ? _label : null,
                     onLabel: (id, on) => on ? _pick(Shelf.labeled, id) : _pick(Shelf.notes),
                   ),
@@ -546,8 +592,9 @@ class _HomePageState extends ConsumerState<HomePage> {
     final scaffold = Scaffold(
       key: _scaffold,
       onDrawerChanged: (open) => setState(() => _railOpen = open),
-      // compact and medium: the expanded rail comes over the content
-      drawer: wide
+      // medium: the expanded rail comes over the content, from the
+      // collapsed rail's menu button (compact has no rail at all)
+      drawer: wide || compact
           ? null
           : NavRail(
               mode: RailMode.modal,
@@ -604,16 +651,20 @@ class _HomePageState extends ConsumerState<HomePage> {
           ? _BoardFloat(start: railWidth, end: detail, centered: true)
           : (detail > 0 ? _BoardFloat(start: 0, end: detail, centered: false) : null),
     );
-    // Back closes the modal rail, then clears the selection; while
+    // Back closes the modal rail, then clears the selection, then (on a
+    // compact window) returns to Notes; while
     // selecting, Escape clears it too and Ctrl+A takes every note shown
     return PopScope(
-      canPop: selected.isEmpty && !_railOpen,
+      canPop: selected.isEmpty && !_railOpen && !(compact && _shelf != Shelf.notes),
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
         if (_scaffold.currentState?.isDrawerOpen ?? false) {
           _scaffold.currentState?.closeDrawer();
-        } else {
+        } else if (selected.isNotEmpty) {
           _clearSelection();
+        } else {
+          // on a phone the other shelves are a step in from Notes
+          _pick(Shelf.notes);
         }
       },
       child: Focus(
@@ -667,16 +718,19 @@ class _HomePageState extends ConsumerState<HomePage> {
           padding: const EdgeInsetsDirectional.only(start: 4, end: 12),
           child: Text(words ? '$n selected' : '$n', semanticsLabel: '$n selected'),
         ),
-        ..._selectionActions(lib, ids, shown, fits - 1),
+        ..._noteActions(lib, ids, shown, fits: fits - 1),
       ],
     );
   }
 
-  /// The toolbar's actions for [ids], in at most [fits] buttons.
-  List<Widget> _selectionActions(Library lib, List<String> ids, List<Note> shown, int fits) {
+  /// What can be done to the notes [ids]: as the selection toolbar's buttons
+  /// (at most [fits], the rest under More), or as a [menu]'s items (a right
+  /// click on a card).
+  List<Widget> _noteActions(Library lib, List<String> ids, List<Note> shown, {int fits = 0, bool menu = false}) {
     if (ref.read(engineProvider) == null) return const [];
     final me = ref.read(sessionProvider).value?.user.id ?? '';
-    final notes = [for (final id in ids) lib.notes.firstWhere((n) => n.id == id)];
+    final notes = [for (final id in ids) ?lib.notes.where((n) => n.id == id).firstOrNull];
+    if (notes.isEmpty) return const [];
     final owned = [
       for (final n in notes)
         if (n.owner == me) n.id,
@@ -687,37 +741,46 @@ class _HomePageState extends ConsumerState<HomePage> {
     ];
     final n = ids.length;
     String count(String what) => n == 1 ? '1 note $what' : '$n notes $what';
+    MenuItemButton item(IconData icon, String label, VoidCallback run) =>
+        MenuItemButton(leadingIcon: Icon(icon), onPressed: run, child: Text(label));
 
     if (_shelf == Shelf.trash) {
+      void restore() {
+        bump();
+        _apply([for (final id in owned) _op(Collections.notes, id, 'trashed', '')], skipped: n - owned.length);
+        _clearSelection();
+      }
+
+      Future<void> deleteForever() async {
+        final ok = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            icon: const Icon(Icons.delete_forever_outlined),
+            title: Text(n == 1 ? 'Delete this note forever?' : 'Delete $n notes forever?'),
+            content: const Text('They go from every device, for everyone they are shared with.'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+              TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
+            ],
+          ),
+        );
+        if (ok != true) return;
+        _apply([for (final id in owned) _op(Collections.notes, id, 'deleted', true)], skipped: n - owned.length);
+        _clearSelection();
+      }
+
+      if (menu) {
+        return [
+          item(Icons.restore_from_trash_outlined, 'Restore', restore),
+          item(Icons.delete_forever_outlined, 'Delete forever', deleteForever),
+        ];
+      }
       return [
-        IconButton(
-          tooltip: 'Restore',
-          icon: const Icon(Icons.restore_from_trash_outlined),
-          onPressed: () {
-            _apply([for (final id in owned) _op(Collections.notes, id, 'trashed', '')], skipped: n - owned.length);
-            _clearSelection();
-          },
-        ),
+        IconButton(tooltip: 'Restore', icon: const Icon(Icons.restore_from_trash_outlined), onPressed: restore),
         IconButton(
           tooltip: 'Delete forever',
           icon: const Icon(Icons.delete_forever_outlined),
-          onPressed: () async {
-            final ok = await showDialog<bool>(
-              context: context,
-              builder: (context) => AlertDialog(
-                icon: const Icon(Icons.delete_forever_outlined),
-                title: Text(n == 1 ? 'Delete this note forever?' : 'Delete $n notes forever?'),
-                content: const Text('They go from every device, for everyone they are shared with.'),
-                actions: [
-                  TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-                  TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
-                ],
-              ),
-            );
-            if (ok != true) return;
-            _apply([for (final id in owned) _op(Collections.notes, id, 'deleted', true)], skipped: n - owned.length);
-            _clearSelection();
-          },
+          onPressed: deleteForever,
         ),
       ];
     }
@@ -728,11 +791,13 @@ class _HomePageState extends ConsumerState<HomePage> {
     final color = colors.length == 1 ? colors.first : '';
 
     void pin() {
+      bump();
       _apply([for (final id in ids) _op(Collections.noteState, id, 'pinned', !allPinned)]);
       _clearSelection();
     }
 
     void archive() {
+      bump();
       final was = {for (final id in ids) id: lib.stateOf(id).archived};
       _apply([for (final id in ids) _op(Collections.noteState, id, 'archived', !allArchived)]);
       _clearSelection();
@@ -746,6 +811,7 @@ class _HomePageState extends ConsumerState<HomePage> {
     }
 
     void trash() {
+      bump();
       final at = DateTime.now().toUtc().toIso8601String();
       _apply([for (final id in owned) _op(Collections.notes, id, 'trashed', at)], skipped: n - owned.length);
       _clearSelection();
@@ -766,6 +832,53 @@ class _HomePageState extends ConsumerState<HomePage> {
         _op(Collections.noteState, id, 'reminder_done', false),
       ],
     ]);
+
+    void selectAll() => setState(() => _selected.addAll(shown.map((x) => x.id)));
+
+    if (menu) {
+      // one note's reminder shows as set, and can be removed
+      final st = n == 1 ? lib.stateOf(ids.single) : null;
+      final current = st == null || st.reminderDone ? null : reminderTime(st.reminder);
+      return [
+        item(allPinned ? Icons.push_pin : Icons.push_pin_outlined, allPinned ? 'Unpin' : 'Pin', pin),
+        SubmenuButton(
+          leadingIcon: Icon(current == null ? Icons.add_alarm_outlined : Icons.alarm),
+          menuChildren: reminderMenuItems(context, current: current, onSet: remind, onClear: () => remind(null)),
+          child: const Text('Remind me'),
+        ),
+        SubmenuButton(
+          leadingIcon: const Icon(Icons.palette_outlined),
+          menuChildren: [
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: SizedBox(
+                width: 348, // two rows of six
+                child: NoteSwatches(
+                  current: color,
+                  onPick: (c) {
+                    setColor(c);
+                    _cardMenu.close();
+                  },
+                ),
+              ),
+            ),
+          ],
+          child: const Text('Background color'),
+        ),
+        item(Icons.label_outline, 'Labels', () => showLabelPicker(context, ids)),
+        item(
+          allArchived ? Icons.unarchive_outlined : Icons.archive_outlined,
+          allArchived ? 'Unarchive' : 'Archive',
+          archive,
+        ),
+        item(Icons.delete_outline, 'Delete', trash),
+        const Divider(height: 9),
+        if (!_selected.containsAll(ids))
+          item(Icons.check_circle_outline, 'Select', () => setState(() => _selected.addAll(ids)))
+        else
+          item(Icons.select_all, 'Select all', selectAll),
+      ];
+    }
 
     final pinButton = IconButton(
       tooltip: allPinned ? 'Unpin' : 'Pin',
@@ -806,23 +919,19 @@ class _HomePageState extends ConsumerState<HomePage> {
       archiveButton,
       more([
         if (!showRemind)
-          MenuItemButton(
-            leadingIcon: const Icon(Icons.add_alarm_outlined),
-            onPressed: () => showReminderSheet(context, current: null, onSet: remind, onClear: () => remind(null)),
-            child: const Text('Remind me'),
+          item(
+            Icons.add_alarm_outlined,
+            'Remind me',
+            () => showReminderSheet(context, current: null, onSet: remind, onClear: () => remind(null)),
           ),
         if (!showColor)
-          MenuItemButton(
-            leadingIcon: const Icon(Icons.palette_outlined),
-            onPressed: () => showColorSheet(context, current: color, onPick: setColor),
-            child: const Text('Background color'),
+          item(
+            Icons.palette_outlined,
+            'Background color',
+            () => showColorSheet(context, current: color, onPick: setColor),
           ),
-        MenuItemButton(leadingIcon: const Icon(Icons.delete_outline), onPressed: trash, child: const Text('Delete')),
-        MenuItemButton(
-          leadingIcon: const Icon(Icons.select_all),
-          onPressed: () => setState(() => _selected.addAll(shown.map((x) => x.id))),
-          child: const Text('Select all'),
-        ),
+        item(Icons.delete_outline, 'Delete', trash),
+        item(Icons.select_all, 'Select all', selectAll),
       ]),
     ];
   }
@@ -836,6 +945,8 @@ class _FilterChips extends StatelessWidget {
     required this.margin,
     required this.filters,
     required this.onFilter,
+    required this.reminders,
+    required this.onReminders,
     required this.labels,
     required this.label,
     required this.onLabel,
@@ -843,6 +954,10 @@ class _FilterChips extends StatelessWidget {
   final double margin;
   final Set<NoteFilter> filters;
   final void Function(NoteFilter filter, bool on) onFilter;
+
+  /// Whether the Reminders shelf is the one shown; null for no such chip.
+  final bool? reminders;
+  final ValueChanged<bool> onReminders;
   final List<Label> labels;
   final String? label;
   final void Function(String id, bool on) onLabel;
@@ -850,6 +965,16 @@ class _FilterChips extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final chips = <Widget>[
+      if (reminders case final on?)
+        FilterChip(
+          avatar: on ? null : const Icon(Icons.notifications_outlined),
+          label: const Text('Reminders'),
+          selected: on,
+          onSelected: (v) {
+            tick();
+            onReminders(v);
+          },
+        ),
       for (final f in NoteFilter.values)
         FilterChip(label: Text(f.label), selected: filters.contains(f), onSelected: (on) => onFilter(f, on)),
       for (final l in labels)
@@ -857,7 +982,10 @@ class _FilterChips extends StatelessWidget {
           avatar: label == l.id ? null : const Icon(Icons.label_outline),
           label: Text(l.name),
           selected: label == l.id,
-          onSelected: (on) => onLabel(l.id, on),
+          onSelected: (on) {
+            tick();
+            onLabel(l.id, on);
+          },
         ),
     ];
     return SizedBox(
@@ -917,7 +1045,10 @@ class _BoardFloat extends StandardFabLocation with FabFloatOffsetY {
 /// The account: an avatar in the search bar, with the account and sign-out
 /// in its menu.
 class _Account extends ConsumerWidget {
-  const _Account();
+  const _Account({this.onPick});
+
+  /// On compact windows, which have no rail: the way to Archive and Trash.
+  final void Function(Shelf shelf)? onPick;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -959,6 +1090,9 @@ class _Account extends ConsumerWidget {
           ),
         ),
         const Divider(height: 1),
+        if (onPick case final pick?)
+          for (final s in const [Shelf.archive, Shelf.trash])
+            MenuItemButton(leadingIcon: Icon(s.icon), onPressed: () => pick(s), child: Text(s.label)),
         MenuItemButton(
           leadingIcon: const Icon(Icons.settings_outlined),
           onPressed: () => showSettings(context),

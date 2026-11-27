@@ -282,7 +282,7 @@ class _FullPlayer extends ConsumerWidget {
                         builder: (context, loading, _) => mine && loading != null
                             ? SizedBox(
                                 height: 48,
-                                child: Center(child: LinearProgressIndicator(value: loading == 0 ? null : loading)),
+                                child: Center(child: WavyProgress(value: loading == 0 ? null : loading)),
                               )
                             : (mine ? SeekBar(player: deck.player) : const SizedBox(height: 48)),
                       ),

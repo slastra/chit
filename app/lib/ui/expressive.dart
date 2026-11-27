@@ -5,9 +5,11 @@
 /// toolbars (which replace the bottom app bar).
 library;
 
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' show PointerDeviceKind;
 
+import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:material_ui/material_ui.dart';
 
 /// Sideways scrolling a mouse can drag, without a scrollbar: for rows and
@@ -93,14 +95,15 @@ class _LoadingIndicatorState extends State<LoadingIndicator> with SingleTickerPr
 
 // ---- wavy progress -----------------------------------------------------------
 
-/// Material's wavy linear progress indicator, determinate: the done part a
-/// wave (3dp amplitude, 40dp wavelength, 4dp thick), a 4dp gap, then the
-/// flat track, with the stop dot at its end. The wave travels while
-/// [moving] (something is playing, working) and flattens near the ends,
-/// where there is no room for it.
+/// Material's wavy linear progress indicator: the done part a wave (3dp
+/// amplitude, 40dp wavelength, 4dp thick), a 4dp gap, then the flat track,
+/// with the stop dot at its end. The wave travels while [moving] (something
+/// is playing, working) and flattens near the ends, where there is no room
+/// for it. With no [value] it is indeterminate: a length of wave crossing
+/// the track, over and over.
 class WavyProgress extends StatefulWidget {
   const WavyProgress({super.key, required this.value, this.moving = true, this.color, this.trackColor});
-  final double value;
+  final double? value;
   final bool moving;
   final Color? color;
   final Color? trackColor;
@@ -110,21 +113,23 @@ class WavyProgress extends StatefulWidget {
 }
 
 class _WavyProgressState extends State<WavyProgress> with SingleTickerProviderStateMixin {
-  // one wavelength a second
-  late final _ctl = AnimationController(vsync: this, duration: const Duration(seconds: 1));
+  // two wavelengths in a turn; the indeterminate length crosses once
+  late final _ctl = AnimationController(vsync: this, duration: const Duration(seconds: 2));
+
+  bool get _moving => widget.moving || widget.value == null;
 
   @override
   void initState() {
     super.initState();
-    if (widget.moving) _ctl.repeat();
+    if (_moving) _ctl.repeat();
   }
 
   @override
   void didUpdateWidget(WavyProgress old) {
     super.didUpdateWidget(old);
-    if (widget.moving && !_ctl.isAnimating) {
+    if (_moving && !_ctl.isAnimating) {
       _ctl.repeat();
-    } else if (!widget.moving && _ctl.isAnimating) {
+    } else if (!_moving && _ctl.isAnimating) {
       _ctl.stop();
     }
   }
@@ -138,16 +143,18 @@ class _WavyProgressState extends State<WavyProgress> with SingleTickerProviderSt
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final value = widget.value;
     return Semantics(
-      value: '${(widget.value * 100).round()}%',
+      label: value == null ? 'Loading' : null,
+      value: value == null ? null : '${(value * 100).round()}%',
       child: SizedBox(
         height: 10, // the track's 4dp and the wave's 3dp either side
         child: AnimatedBuilder(
           animation: _ctl,
           builder: (context, _) => CustomPaint(
             painter: _WavePainter(
-              value: widget.value.clamp(0.0, 1.0),
-              phase: _ctl.value,
+              value: value?.clamp(0.0, 1.0),
+              turn: _ctl.value,
               color: widget.color ?? scheme.primary,
               track: widget.trackColor ?? scheme.secondaryContainer,
               rtl: Directionality.of(context) == TextDirection.rtl,
@@ -160,9 +167,9 @@ class _WavyProgressState extends State<WavyProgress> with SingleTickerProviderSt
 }
 
 class _WavePainter extends CustomPainter {
-  _WavePainter({required this.value, required this.phase, required this.color, required this.track, required this.rtl});
-  final double value;
-  final double phase;
+  _WavePainter({required this.value, required this.turn, required this.color, required this.track, required this.rtl});
+  final double? value;
+  final double turn;
   final Color color;
   final Color track;
   final bool rtl;
@@ -184,28 +191,50 @@ class _WavePainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = _thickness
       ..strokeCap = StrokeCap.round;
+    final phase = turn * 2;
+
+    void line(double from, double to) {
+      if (to > from) canvas.drawLine(Offset(from, mid), Offset(to, mid), stroke..color = track);
+    }
+
+    // a wave from [from] to [to], easing to the center line at its ends
+    void wave(double from, double to, double amp) {
+      if (to <= from) return;
+      double y(double x) {
+        final ends = math.min(1.0, math.min(x - from, to - x) / 12);
+        return mid + amp * ends * math.sin((x / _wavelength - phase) * 2 * math.pi);
+      }
+
+      final path = Path()..moveTo(from, y(from));
+      for (var x = from + 1; x < to; x += 1) {
+        path.lineTo(x, y(x));
+      }
+      canvas.drawPath(path..lineTo(to, y(to)), stroke..color = color);
+    }
+
+    final value = this.value;
+    if (value == null) {
+      // a third of the track's length, in from the start and out the end
+      final length = size.width / 3;
+      final head = (size.width + length) * Curves.easeInOut.transform(turn);
+      final from = math.max(r, head - length), to = math.min(size.width - r, head);
+      line(r, from - _gap - r);
+      wave(from, to, _amplitude);
+      line(to + _gap + r, size.width - r);
+      return;
+    }
     final end = size.width * value;
     // the track, after the gap, with its stop dot
-    final from = end + (value > 0 ? _gap + r : r);
-    if (from < size.width - r) {
-      canvas.drawLine(Offset(from, mid), Offset(size.width - r, mid), stroke..color = track);
-    }
+    line(end + (value > 0 ? _gap + r : r), size.width - r);
     canvas.drawCircle(Offset(size.width - r, mid), r, Paint()..color = color);
-    if (end <= r) return;
     // the wave: full between 10% and 95%, flat towards either end
     final amp = _amplitude * (value < 0.1 ? value / 0.1 : (value > 0.95 ? (1 - value) / 0.05 : 1.0));
-    final path = Path()..moveTo(r, mid + _y(r, amp));
-    for (var x = r + 1; x < end - r; x += 1) {
-      path.lineTo(x, mid + _y(x, amp));
-    }
-    canvas.drawPath(path, stroke..color = color);
+    wave(r, end - r, amp);
   }
-
-  double _y(double x, double amp) => amp * math.sin((x / _wavelength - phase) * 2 * math.pi);
 
   @override
   bool shouldRepaint(_WavePainter old) =>
-      old.value != value || old.phase != phase || old.color != color || old.track != track;
+      old.value != value || old.turn != turn || old.color != color || old.track != track;
 }
 
 // ---- connected button group --------------------------------------------------
@@ -478,7 +507,11 @@ class _PullToRefreshState extends State<PullToRefresh> {
       children: [
         RefreshIndicator.noSpinner(
           onRefresh: widget.onRefresh,
-          onStatusChange: (s) => setState(() => _status = s),
+          onStatusChange: (s) {
+            // far enough to let go: felt
+            if (s == RefreshIndicatorStatus.armed) unawaited(HapticFeedback.selectionClick());
+            setState(() => _status = s);
+          },
           child: widget.child,
         ),
         Positioned(
