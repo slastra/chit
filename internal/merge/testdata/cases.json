@@ -1,0 +1,79 @@
+[
+  {
+    "name": "only mine changed",
+    "base": "milk eggs bread",
+    "current": "milk eggs bread",
+    "mine": "milk eggs bread coffee",
+    "want": "milk eggs bread coffee"
+  },
+  {
+    "name": "only theirs changed",
+    "base": "milk eggs bread",
+    "current": "oat milk eggs bread",
+    "mine": "milk eggs bread",
+    "want": "oat milk eggs bread"
+  },
+  {
+    "name": "different places",
+    "base": "Pick up brushes on Saturday.",
+    "current": "Pick up brushes and a drop cloth on Saturday.",
+    "mine": "Pick up brushes on Saturday morning.",
+    "want": "Pick up brushes and a drop cloth on Saturday morning."
+  },
+  {
+    "name": "same change twice",
+    "base": "Two coats.",
+    "current": "Two coats, gray.",
+    "mine": "Two coats, gray.",
+    "want": "Two coats, gray."
+  },
+  {
+    "name": "same words, both kept",
+    "base": "Dinner at six",
+    "current": "Dinner at seven",
+    "mine": "Dinner at eight",
+    "want": "Dinner at seven eight"
+  },
+  {
+    "name": "both add at the end",
+    "base": "Groceries:",
+    "current": "Groceries: milk",
+    "mine": "Groceries: eggs",
+    "want": "Groceries: milk eggs"
+  },
+  {
+    "name": "lines, one each",
+    "base": "Trip\nHot Springs\n",
+    "current": "Trip\nHot Springs in April\n",
+    "mine": "Trip\nHot Springs\nBuffalo River in June\n",
+    "want": "Trip\nHot Springs in April\nBuffalo River in June\n"
+  },
+  {
+    "name": "one deletes, one edits elsewhere",
+    "base": "a b c d e",
+    "current": "a c d e",
+    "mine": "a b c d e f",
+    "want": "a c d e f"
+  },
+  {
+    "name": "from nothing",
+    "base": "",
+    "current": "Paint the fence",
+    "mine": "Buy brushes",
+    "want": "Paint the fence Buy brushes"
+  },
+  {
+    "name": "mine is unchanged",
+    "base": "x",
+    "current": "y",
+    "mine": "x",
+    "want": "y"
+  },
+  {
+    "name": "a no-break space is part of a word",
+    "base": "9 AM call",
+    "current": "9 AM call Bob",
+    "mine": "10 AM call",
+    "want": "10 AM call Bob"
+  }
+]

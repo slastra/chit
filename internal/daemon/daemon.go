@@ -282,7 +282,9 @@ func (d *Daemon) syncLoop(ctx context.Context) {
 		// seq: the snapshot's cursor goes back, but the open stream has
 		// already moved past it and never sends that change again.
 		var resyncing atomic.Bool
+		watchDone := make(chan struct{})
 		go func() {
+			defer close(watchDone)
 			select {
 			case <-streamCtx.Done():
 			case <-d.resync:
@@ -313,6 +315,7 @@ func (d *Daemon) syncLoop(ctx context.Context) {
 			},
 		})
 		cancel()
+		<-watchDone
 		if ctx.Err() != nil {
 			return
 		}

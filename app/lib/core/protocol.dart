@@ -21,7 +21,14 @@ Clocks _clocks(Object? v) => {for (final MapEntry(:key, :value) in ((v as Map?) 
 
 /// One field of one record. For note_state, [id] is the note's id.
 final class Op {
-  const Op({required this.collection, required this.id, required this.field, required this.value, required this.hlc});
+  const Op({
+    required this.collection,
+    required this.id,
+    required this.field,
+    required this.value,
+    required this.hlc,
+    this.base = '',
+  });
 
   final String collection;
   final String id;
@@ -29,7 +36,19 @@ final class Op {
   final Object? value;
   final String hlc;
 
-  Json toJson() => {'collection': collection, 'id': id, 'field': field, 'value': value, 'hlc': hlc};
+  /// For free text (a title, a body, an item's text): the clock of the
+  /// value this edit started from. If someone else wrote the field since,
+  /// the server merges the two edits rather than keeping the later.
+  final String base;
+
+  Json toJson() => {
+    'collection': collection,
+    'id': id,
+    'field': field,
+    'value': value,
+    'hlc': hlc,
+    if (base.isNotEmpty) 'base': base,
+  };
 
   factory Op.fromJson(Json j) => Op(
     collection: j['collection']! as String,
@@ -37,6 +56,7 @@ final class Op {
     field: j['field']! as String,
     value: j['value'],
     hlc: j['hlc']! as String,
+    base: j['base'] as String? ?? '',
   );
 }
 

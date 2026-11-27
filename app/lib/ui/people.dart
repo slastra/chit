@@ -50,11 +50,11 @@ class PersonAvatar extends ConsumerWidget {
       excludeSemantics: true,
       child: ring == null
           ? avatar
-          : DecoratedBox(
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: ring!, width: 2),
-              ),
+          // around the face, not under it (a decoration's border is
+          // painted beneath its child, which covered it)
+          : Container(
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(shape: BoxShape.circle, color: ring),
               child: avatar,
             ),
     );

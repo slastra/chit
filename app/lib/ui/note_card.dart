@@ -39,6 +39,7 @@ class NoteCard extends ConsumerStatefulWidget {
     this.longPressSelects = false,
     this.overhang = 0,
     this.open = false,
+    this.present = const [],
   });
 
   /// The note and what goes with it. The card rebuilds only when this
@@ -73,6 +74,10 @@ class NoteCard extends ConsumerStatefulWidget {
   /// for the selection check that sits on the card's corner (the grid's
   /// [Masonry.overhang]).
   final double overhang;
+
+  /// Who else has the note open right now: a face each at the card's foot,
+  /// ringed while they type.
+  final List<({String user, bool editing})> present;
 
   /// Whether this note is the one open in the detail pane beside the board:
   /// its card takes the pane's tone, tying the two together.
@@ -290,6 +295,7 @@ class _NoteCardState extends ConsumerState<NoteCard> {
                                     if (m.user != me) m.user,
                                 ],
                                 ring: scheme?.primaryContainer ?? theme.colorScheme.surface,
+                                present: widget.present,
                               ),
                           ],
                         ),
@@ -616,17 +622,28 @@ class _CardImages extends StatelessWidget {
 /// Who else is on a shared note: their faces, overlapping, three at most
 /// and a count for more; their names on hover.
 class _Sharers extends ConsumerWidget {
-  const _Sharers({required this.ids, required this.ring});
+  const _Sharers({required this.ids, required this.ring, this.present = const []});
   final List<String> ids;
   final Color ring;
 
+  /// Those of them in the note right now: first in line, ringed in
+  /// primary while they type and in outline while they look.
+  final List<({String user, bool editing})> present;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
     final people = ref.watch(peopleProvider).value ?? const <Person>[];
-    final shown = ids.take(3).toList();
+    final here = {for (final p in present) p.user: p.editing};
+    final order = [...ids.where(here.containsKey), ...ids.where((i) => !here.containsKey(i))];
+    final shown = order.take(3).toList();
     const r = 11.0;
+    final now = [
+      for (final p in present)
+        if (ids.contains(p.user)) '${nameOf(people, p.user)} is ${p.editing ? 'editing' : 'viewing'}',
+    ];
     return Tooltip(
-      message: 'Shared with ${ids.map((i) => nameOf(people, i)).join(', ')}',
+      message: [...now, 'Shared with ${ids.map((i) => nameOf(people, i)).join(', ')}'].join('\n'),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -638,7 +655,15 @@ class _Sharers extends ConsumerWidget {
                 for (final (i, id) in shown.indexed)
                   Positioned(
                     left: i * r * 1.3,
-                    child: PersonAvatar(id: id, radius: r, ring: ring),
+                    child: PersonAvatar(
+                      id: id,
+                      radius: r,
+                      ring: switch (here[id]) {
+                        true => scheme.primary,
+                        false => scheme.outline,
+                        null => ring,
+                      },
+                    ),
                   ),
               ],
             ),

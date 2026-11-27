@@ -21,9 +21,14 @@ var pingEvery = 50 * time.Second
 type Broker struct {
 	mu   sync.Mutex
 	subs map[chan struct{}]struct{}
+
+	// who has which note open, for the streams of those who can see it
+	presence *presences
 }
 
-func NewBroker() *Broker { return &Broker{subs: map[chan struct{}]struct{}{}} }
+func NewBroker() *Broker {
+	return &Broker{subs: map[chan struct{}]struct{}{}, presence: newPresences()}
+}
 
 func (b *Broker) subscribe() chan struct{} {
 	ch := make(chan struct{}, 1)
@@ -79,8 +84,27 @@ func handleStream(e *core.RequestEvent, b *Broker) error {
 
 	ch := b.subscribe()
 	defer b.unsubscribe(ch)
+	pres := b.presence.subscribe()
+	defer b.presence.unsubscribe(pres)
 	ping := time.NewTicker(pingEvery)
 	defer ping.Stop()
+
+	// Presence goes to those who can see the note, other devices than the
+	// one it is about, without an id: it is not in the log, and a client's
+	// Last-Event-ID must not move for it.
+	sendPresence := func(ev PresenceEvent) error {
+		if ev.Device == dev {
+			return nil
+		}
+		if acc, _, err := noteAccess(e.App, userID, ev.Note); err != nil || acc == noAccess {
+			return err
+		}
+		data, _ := json.Marshal(ev)
+		if _, err := fmt.Fprintf(w, "event: presence\ndata: %s\n\n", data); err != nil {
+			return err
+		}
+		return e.Flush()
+	}
 
 	send := func() error {
 		for {
@@ -114,6 +138,11 @@ func handleStream(e *core.RequestEvent, b *Broker) error {
 	if err := send(); err != nil {
 		return nil
 	}
+	for _, ev := range b.presence.current() {
+		if err := sendPresence(ev); err != nil {
+			return nil
+		}
+	}
 	ctx := e.Request.Context()
 	for {
 		select {
@@ -121,6 +150,10 @@ func handleStream(e *core.RequestEvent, b *Broker) error {
 			return nil
 		case <-ch:
 			if err := send(); err != nil {
+				return nil
+			}
+		case ev := <-pres:
+			if err := sendPresence(ev); err != nil {
 				return nil
 			}
 		case <-ping.C:

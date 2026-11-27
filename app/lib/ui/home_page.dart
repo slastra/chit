@@ -150,13 +150,23 @@ class _HomePageState extends ConsumerState<HomePage> with _NoteActions {
   final _searchFocus = FocusNode(debugLabel: 'search');
 
   /// The board's keys, whatever has focus (or nothing does): Ctrl+F and /
-  /// to search, Ctrl+N for a new note. Only while the board is the page in
-  /// front, and / only when it would not be typed into a field.
+  /// to search, Escape to leave search, Ctrl+N for a new note. Only while
+  /// the board is the page in front, and / only when it would not be typed
+  /// into a field.
   bool _onKey(KeyEvent e) {
     if (e is! KeyDownEvent || !mounted || !(ModalRoute.of(context)?.isCurrent ?? false)) return false;
     final keys = HardwareKeyboard.instance;
     final ctrl = keys.isControlPressed || keys.isMetaPressed;
-    final typing = FocusManager.instance.primaryFocus?.context?.widget is EditableText;
+    if (e.logicalKey == LogicalKeyboardKey.escape && _searchFocus.hasFocus) {
+      if (_query.isNotEmpty) _clearSearch();
+      _searchFocus.unfocus();
+      return true;
+    }
+    final focusCtx = FocusManager.instance.primaryFocus?.context;
+    final typing =
+        _searchFocus.hasFocus ||
+        (focusCtx != null &&
+            (focusCtx.widget is EditableText || focusCtx.findAncestorWidgetOfExactType<EditableText>() != null));
     if ((ctrl && e.logicalKey == LogicalKeyboardKey.keyF) ||
         (!ctrl && !typing && e.logicalKey == LogicalKeyboardKey.slash)) {
       _searchFocus.requestFocus();
@@ -229,10 +239,16 @@ class _HomePageState extends ConsumerState<HomePage> with _NoteActions {
   /// sync of nothing new no longer rebuilds every card.
   final _cards = <String, ({NoteView view, Object how, Widget card})>{};
 
-  Widget _card(NoteView view, String me, ({bool canDrag, bool open, bool selected, bool selecting}) how) {
+  Widget _card(
+    NoteView view,
+    String me,
+    ({bool canDrag, bool open, bool selected, bool selecting}) how,
+    List<({String user, bool editing})> present,
+  ) {
     final id = view.note.id;
     final last = _cards[id];
-    if (last != null && last.view == view && last.how == (how, me)) return last.card;
+    final who = [for (final p in present) '${p.user}:${p.editing}'].join(',');
+    if (last != null && last.view == view && last.how == (how, me, who)) return last.card;
     final card = NoteCard(
       overhang: _checkOverhang,
       view: view,
@@ -246,8 +262,9 @@ class _HomePageState extends ConsumerState<HomePage> with _NoteActions {
       onMenu: (at) => _openCardMenu(id, at),
       // where a long press lifts the card, lifting selects it
       longPressSelects: !how.canDrag,
+      present: present,
     );
-    _cards[id] = (view: view, how: (how, me), card: card);
+    _cards[id] = (view: view, how: (how, me, who), card: card);
     return card;
   }
 
@@ -349,6 +366,8 @@ class _HomePageState extends ConsumerState<HomePage> with _NoteActions {
       syncStatusProvider.select((s) => s.value?.phase != SyncPhase.online && s.value?.phase != SyncPhase.offline),
     );
     final me = ref.watch(sessionProvider.select((s) => s.value?.user.id ?? ''));
+    // who else has which note open, for a face on its card
+    final present = ref.watch(presenceProvider).value ?? const {};
     // cards of notes gone from the library go too
     _cards.removeWhere((id, _) => lib.note(id) == null);
     final view = _view(lib);
@@ -457,7 +476,7 @@ class _HomePageState extends ConsumerState<HomePage> with _NoteActions {
             open: wide && _openNote == n.id,
             selected: selected.contains(n.id),
             selecting: selected.isNotEmpty,
-          )),
+          ), present[n.id] ?? const []),
         ),
       ),
     );
@@ -606,7 +625,7 @@ class _HomePageState extends ConsumerState<HomePage> with _NoteActions {
                     child: Row(
                       children: [
                         Expanded(child: Text(_shelf.label, style: theme.textTheme.titleLarge)),
-                        if (_shelf == Shelf.trash && shown.isNotEmpty)
+                        if (_shelf == Shelf.trash && !_narrowed && shown.any((n) => n.owner == me))
                           TextButton.icon(
                             onPressed: () => _emptyTrash(shown),
                             icon: const Icon(Icons.delete_forever_outlined),
@@ -691,8 +710,11 @@ class _HomePageState extends ConsumerState<HomePage> with _NoteActions {
                 child: PullToRefresh(onRefresh: _refresh, child: content),
               ),
             ),
-            // the detail pane's room (the pane itself is the note's route)
-            AnimatedContainer(duration: Durations.medium4, curve: Easing.emphasizedDecelerate, width: detail),
+            // the detail pane's room (the pane itself slides in on its route;
+            // giving the board its final width at once lets the masonry cards
+            // glide once to their new columns instead of fighting a per-frame
+            // container resize)
+            SizedBox(width: detail),
           ],
         ),
       ),

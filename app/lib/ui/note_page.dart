@@ -8,6 +8,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../core/items.dart';
 import '../core/links.dart';
+import '../core/merge.dart';
 import '../core/order.dart';
 import '../core/protocol.dart';
 import '../core/reminders.dart';
@@ -31,6 +32,7 @@ import 'feedback.dart';
 import 'theme.dart';
 import 'expressive.dart';
 import 'links_ui.dart';
+import 'people.dart';
 
 /// One note, open or new. Edits save as you pause (and work offline). A new
 /// note only exists once something is typed; leaving one empty discards it.
@@ -103,6 +105,9 @@ class _NotePageState extends ConsumerState<NotePage> {
   void initState() {
     super.initState();
     HardwareKeyboard.instance.addHandler(_onKey);
+    // a new note's fields are the truth from the start: the note arriving
+    // in the library must not reset what has been typed since it was sent
+    if (widget.noteId == null) _loaded = true;
     if (widget.noteId == null && (widget.initialTitle.isNotEmpty || widget.initialBody.isNotEmpty)) {
       _title.text = widget.initialTitle;
       _body.text = widget.initialBody;
@@ -122,6 +127,8 @@ class _NotePageState extends ConsumerState<NotePage> {
 
   @override
   void dispose() {
+    _leave();
+    _life.dispose();
     HardwareKeyboard.instance.removeHandler(_onKey);
     _checkOff.flush();
     for (final t in _timers.values) {
@@ -276,6 +283,128 @@ class _NotePageState extends ConsumerState<NotePage> {
   // ---- checklist -------------------------------------------------------------
 
   TextEditingController _itemCtl(Item it) => _items.putIfAbsent(it.id, () => TextEditingController(text: it.text));
+
+  // ---- being here -------------------------------------------------------------
+
+  /// Says, every 15 seconds while a shared note is open and the app is in
+  /// front, that this device is in it; null while it is not saying so.
+  Timer? _here;
+  DateTime _typed = DateTime(0);
+  late final _life = AppLifecycleListener(onHide: _leave, onShow: () => _shared ? _arrive() : null);
+  bool _shared = false;
+
+  void _say({bool editing = false, bool gone = false}) {
+    final api = _engine?.api;
+    if (api == null || !_exists) return;
+    unawaited(api.presence(_id, editing: editing, gone: gone).catchError((Object _) {}));
+  }
+
+  void _arrive() {
+    if (_here != null || !_exists) return;
+    _say();
+    _here = Timer.periodic(const Duration(seconds: 15), (_) => _say());
+  }
+
+  void _leave() {
+    if (_here == null) return;
+    _here?.cancel();
+    _here = null;
+    _say(gone: true);
+  }
+
+  /// A keystroke: others see this person typing (said at most every four
+  /// seconds; the server lets it lapse eight seconds after the last).
+  void _typing() {
+    if (_here == null) return;
+    final now = DateTime.now();
+    if (now.difference(_typed) < const Duration(seconds: 4)) return;
+    _typed = now;
+    _say(editing: true);
+  }
+
+  // ---- text others edit too ---------------------------------------------------
+
+  /// For each text field ('title', 'body', `item:ID`), the value it was
+  /// last seen to hold in the replica and that value's clock: what an edit
+  /// here starts from. It goes with the edit (the server merges if someone
+  /// wrote meanwhile) and is the common ground when someone's edit arrives
+  /// while this one is being typed.
+  final _bases = <String, ({String text, String clock})>{};
+
+  /// This install's device id: a clock ending in it is an edit from here.
+  String _device = '';
+
+  /// Brings [key]'s field up to the replica's [text] (at [clock]). Not
+  /// being edited: it takes the text. Being edited (focused, or an edit
+  /// waiting to go): someone else's edit is merged into what is typed, the
+  /// cursor kept in its place; this device's own earlier edit coming back
+  /// is already in the field.
+  void _follow(String key, TextEditingController c, String text, String clock) {
+    final base = _bases[key];
+    if (base != null && base.clock == clock) return;
+    _bases[key] = (text: text, clock: clock);
+    if (c.text == text) return;
+    final focus = switch (key) {
+      'title' => _titleFocus,
+      'body' => _bodyFocus,
+      _ => _itemFocus[key.substring(5)],
+    };
+    final editing = (focus?.hasFocus ?? false) || _pendingSends.containsKey(key);
+    if (!editing) {
+      c.text = text;
+      return;
+    }
+    // first sight of a field being typed into (a new note arriving): what
+    // is typed is newer than what it sent so far
+    if (base == null) return;
+    if (clock.endsWith('-$_device')) return;
+    final merged = merge3(base.text, text, c.text);
+    if (merged == c.text) return;
+    _replaceKeepingCursor(c, merged);
+    // what is typed here and not yet sent goes, from the new ground
+    if (merged != text) _later(key, () => _sendText(key));
+  }
+
+  /// Sends a text field as it stands, with the clock of the value it was
+  /// edited from.
+  void _sendText(String key) {
+    final base = _bases[key]?.clock ?? '';
+    final engine = _engine;
+    if (engine == null) return;
+    if (key == 'title' || key == 'body') {
+      final text = (key == 'title' ? _title : _body).text;
+      _edit(() => [engine.op(Collections.notes, _id, key, text, base: base)]);
+    } else {
+      final id = key.substring(5);
+      final c = _items[id];
+      if (c == null) return;
+      _edit(() => [engine.op(Collections.items, id, 'text', c.text, base: base)]);
+    }
+  }
+
+  /// Puts [next] in the field, the cursor (and selection) staying with the
+  /// words it was among: the change lies between what the two texts share
+  /// at their start and their end.
+  static void _replaceKeepingCursor(TextEditingController c, String next) {
+    final old = c.text;
+    var p = 0;
+    while (p < old.length && p < next.length && old.codeUnitAt(p) == next.codeUnitAt(p)) {
+      p++;
+    }
+    var s = 0;
+    while (s < old.length - p &&
+        s < next.length - p &&
+        old.codeUnitAt(old.length - 1 - s) == next.codeUnitAt(next.length - 1 - s)) {
+      s++;
+    }
+    int at(int o) => o <= p ? o : (o >= old.length - s ? o + next.length - old.length : next.length - s);
+    final sel = c.selection;
+    c.value = TextEditingValue(
+      text: next,
+      selection: sel.isValid ? TextSelection(baseOffset: at(sel.baseOffset), extentOffset: at(sel.extentOffset)) : sel,
+    );
+  }
+
   FocusNode _itemNode(String id) => _itemFocus.putIfAbsent(id, FocusNode.new);
 
   void _addItem(List<Item> items, {Item? after}) {
@@ -319,10 +448,9 @@ class _NotePageState extends ConsumerState<NotePage> {
     _edit(() => [_op(Collections.items, it.id, 'deleted', true)]);
     if (i > 0) {
       final above = open[i - 1];
-      final node = _itemNode(above.id)..requestFocus();
       final c = _itemCtl(above);
       c.selection = TextSelection.collapsed(offset: c.text.length);
-      node.requestFocus();
+      _itemNode(above.id).requestFocus();
     }
   }
 
@@ -379,17 +507,15 @@ class _NotePageState extends ConsumerState<NotePage> {
         if (mounted) context.pop();
       });
     }
+    _device = ref.watch(sessionProvider.select((s) => s.value?.device ?? ''));
     if (note != null && !_loaded) {
       _loaded = true;
       _title.text = note.title;
       _body.text = note.body;
-    } else if (note != null) {
-      if (!_titleFocus.hasFocus && !_pendingSends.containsKey('title') && _title.text != note.title) {
-        _title.text = note.title;
-      }
-      if (!_bodyFocus.hasFocus && !_pendingSends.containsKey('body') && _body.text != note.body) {
-        _body.text = note.body;
-      }
+    }
+    if (note != null) {
+      _follow('title', _title, note.title, note.clocks['title'] ?? '');
+      _follow('body', _body, note.body, note.clocks['body'] ?? '');
     }
 
     final isList = note?.isList ?? _listWhileNew;
@@ -408,16 +534,25 @@ class _NotePageState extends ConsumerState<NotePage> {
     final trashed = note != null && note.trashed.isNotEmpty;
     final editable = _editable = canEdit(role) && !trashed;
     final shared = members.isNotEmpty || !owned;
+    // a shared note open here says so, for the others in it (a private one
+    // has no one to tell)
+    _shared = shared && _exists;
+    if (_shared != (_here != null)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final front = WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+        _shared && front ? _arrive() : _leave();
+      });
+    }
+    final present = ref.watch(presenceProvider.select((p) => p.value?[_id])) ?? const [];
     final roomy = widget.inPane || !isCompact(context);
     final reminder = !_exists ? _startReminder : (state.reminderDone ? null : reminderTime(state.reminder));
     final labels = _exists ? lib.labelsOf(_id) : lib.labels.where((l) => l.id == _defaults.label).toList();
     final links = linksIn(isList ? items.map((i) => i.text).join('\n') : (note?.body ?? _body.text));
 
     for (final it in items) {
-      final c = _itemCtl(it);
-      if (!_itemNode(it.id).hasFocus && !_pendingSends.containsKey('item:${it.id}') && c.text != it.text) {
-        c.text = it.text;
-      }
+      _itemNode(it.id);
+      _follow('item:${it.id}', _itemCtl(it), it.text, it.clocks['text'] ?? '');
     }
     if (_focusNext case final id? when items.any((i) => i.id == id)) {
       _focusNext = null;
@@ -439,7 +574,7 @@ class _NotePageState extends ConsumerState<NotePage> {
 
     // A row folds out of its list and into the other when checked or
     // unchecked here (check_motion.dart); a change from elsewhere just moves.
-    Widget itemRow(Item it, {Widget? handle}) => Fold(
+    Widget itemRow(Item it, {Widget? handle, bool canIndent = false}) => Fold(
       key: ValueKey('${it.id}/${it.checked}'),
       leaving: _checkOff.isLeaving(it.id),
       enter: _checkOff.takeArrival(it.id, it.checked),
@@ -448,6 +583,7 @@ class _NotePageState extends ConsumerState<NotePage> {
         key: ValueKey(it.id),
         item: it,
         editable: editable,
+        canIndent: canIndent,
         checked: _checkOff.showsChecked(it.id) ? !it.checked : it.checked,
         controller: _itemCtl(it),
         focusNode: _itemNode(it.id),
@@ -457,7 +593,10 @@ class _NotePageState extends ConsumerState<NotePage> {
           still: MediaQuery.disableAnimationsOf(context),
           commit: () => _edit(() => [_op(Collections.items, it.id, 'checked', v)]),
         ),
-        onChanged: (v) => _later('item:${it.id}', () => _edit(() => [_op(Collections.items, it.id, 'text', v)])),
+        onChanged: (_) {
+          _typing();
+          _later('item:${it.id}', () => _sendText('item:${it.id}'));
+        },
         onSubmitted: () => _addItem(items, after: it),
         onRemove: () => _edit(() => [_op(Collections.items, it.id, 'deleted', true)]),
         onIndent: (inward) => _indent(it, inward: inward),
@@ -518,6 +657,10 @@ class _NotePageState extends ConsumerState<NotePage> {
             leading: widget.inPane
                 ? IconButton(tooltip: 'Close', icon: const Icon(Icons.close), onPressed: () => context.pop())
                 : null,
+            // who else is in the note: their faces, ringed while they type,
+            // and in words who is typing
+            title: present.isEmpty ? null : _Others(others: present),
+            titleSpacing: 0,
             actions: [
               // the owner shares; anyone it is shared with sees with whom. On
               // compact windows the bar keeps three actions (Material's limit
@@ -638,7 +781,10 @@ class _NotePageState extends ConsumerState<NotePage> {
                               decoration: const InputDecoration(hintText: 'Title', border: InputBorder.none),
                               textInputAction: TextInputAction.next,
                               textCapitalization: TextCapitalization.sentences,
-                              onChanged: (v) => _later('title', () => _setNote('title', v)),
+                              onChanged: (_) {
+                                _typing();
+                                _later('title', () => _sendText('title'));
+                              },
                               onSubmitted: (_) => isList
                                   ? (open.isEmpty ? _addItem(items) : _itemNode(open.first.id).requestFocus())
                                   : _bodyFocus.requestFocus(),
@@ -654,7 +800,10 @@ class _NotePageState extends ConsumerState<NotePage> {
                                 minLines: 6,
                                 keyboardType: TextInputType.multiline,
                                 textCapitalization: TextCapitalization.sentences,
-                                onChanged: (v) => _later('body', () => _setNote('body', v)),
+                                onChanged: (_) {
+                                  _typing();
+                                  _later('body', () => _sendText('body'));
+                                },
                                 contentInsertionConfiguration: _insertion,
                               ),
                             if (isList) ...[
@@ -671,6 +820,7 @@ class _NotePageState extends ConsumerState<NotePage> {
                                         key: ValueKey('row/${it.id}'),
                                         child: itemRow(
                                           it,
+                                          canIndent: i > 0,
                                           handle: ReorderableDragStartListener(
                                             index: i,
                                             child: MouseRegion(
@@ -874,6 +1024,7 @@ class _ItemRow extends StatefulWidget {
     required this.onRemove,
     required this.onIndent,
     required this.onRemoveEmpty,
+    this.canIndent = false,
     this.handle,
   });
 
@@ -882,6 +1033,10 @@ class _ItemRow extends StatefulWidget {
   /// Indents (true) or brings back out (false): Tab and Shift+Tab, or the
   /// button on the row being edited.
   final ValueChanged<bool> onIndent;
+
+  /// Whether there is an item above this one to indent under (bringing an
+  /// already-indented row back out always stays allowed).
+  final bool canIndent;
 
   /// Backspace in the empty row.
   final VoidCallback onRemoveEmpty;
@@ -946,8 +1101,9 @@ class _ItemRowState extends State<_ItemRow> {
                 canRequestFocus: false,
                 onKeyEvent: (_, e) {
                   if (!widget.editable || e is! KeyDownEvent) return KeyEventResult.ignored;
-                  if (e.logicalKey == LogicalKeyboardKey.tab) {
-                    widget.onIndent(!HardwareKeyboard.instance.isShiftPressed);
+                  if (e.logicalKey == LogicalKeyboardKey.tab && !widget.checked) {
+                    final inward = !HardwareKeyboard.instance.isShiftPressed;
+                    if (!inward || widget.canIndent) widget.onIndent(inward);
                     return KeyEventResult.handled;
                   }
                   if (e.logicalKey == LogicalKeyboardKey.backspace && widget.controller.text.isEmpty) {
@@ -974,7 +1130,7 @@ class _ItemRowState extends State<_ItemRow> {
             ),
             // the row being edited can be indented or brought out (no Tab
             // key on a phone)
-            if (editing && !widget.checked)
+            if (editing && !widget.checked && (it.indent > 0 || widget.canIndent))
               // part of the field's tap region: a tap here keeps the field
               // (and so this button) rather than closing the keyboard
               TextFieldTapRegion(
@@ -1098,6 +1254,79 @@ class _Notice extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// The others in a note: a face each (ringed in primary while they type),
+/// and who is typing, in words.
+class _Others extends ConsumerWidget {
+  const _Others({required this.others});
+  final List<({String user, bool editing})> others;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final people = ref.watch(peopleProvider).value ?? const <Person>[];
+    String first(String id) => nameOf(people, id).split(' ').first;
+    final typing = [
+      for (final o in others)
+        if (o.editing) first(o.user),
+    ];
+    final words = typing.isEmpty
+        ? (others.length == 1 ? '${first(others.single.user)} is here' : '${others.length} others here')
+        : (typing.length == 1 ? '${typing.single} is editing' : '${typing.join(' and ')} are editing');
+    // in words when there is room; a narrow bar (the pane, with its
+    // actions) keeps the faces, their rings and tooltips saying the same
+    return Semantics(
+      liveRegion: true,
+      label: words,
+      excludeSemantics: true,
+      child: LayoutBuilder(
+        builder: (context, box) {
+          final fits = box.maxWidth >= 32.0 * others.take(3).length + 8 * words.length;
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final o in others.take(3))
+                Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: Tooltip(
+                    message: '${nameOf(people, o.user)} is ${o.editing ? 'editing' : 'viewing'}',
+                    child: AnimatedContainer(
+                      duration: Durations.short4,
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: o.editing ? theme.colorScheme.primary : Colors.transparent, width: 2),
+                      ),
+                      child: PersonAvatar(id: o.user, radius: 12),
+                    ),
+                  ),
+                ),
+              // the words if they fit (about 8dp a letter beside 32dp a face);
+              // short of that, just that someone is typing
+              if (fits || typing.isNotEmpty) ...[
+                const SizedBox(width: 4),
+                Flexible(
+                  child: AnimatedSwitcher(
+                    duration: Durations.short4,
+                    child: Text(
+                      fits ? words : 'editing',
+                      key: ValueKey(words),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: typing.isEmpty ? theme.colorScheme.onSurfaceVariant : theme.colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          );
+        },
       ),
     );
   }

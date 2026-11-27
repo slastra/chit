@@ -152,6 +152,37 @@ data: {}
   does this.
 - Planned: a `reset` event once old changes are compacted.
 
+### Text merges
+
+`title` and `body` on notes and `text` on items are free text. An op on one may carry
+`base`: the clock of the value the edit started from. If the field's clock is no longer
+`base` (someone wrote it meanwhile), the server does not keep the later of the two. It
+finds the base value in the log and joins the edits word by word (`internal/merge`):
+
+- a stretch only one side changed takes that change;
+- a stretch both changed differently keeps both, what was there first, then the edit.
+
+The result is stamped with a server clock past both edits and goes out on the feed to
+everyone, the sender's device included (it holds only its half). The op's result says
+`"merged": true`. Without `base` (the CLI, chitd) the later write wins as before.
+
+The app runs the same merge (`app/lib/core/merge.dart`, the same cases in
+`internal/merge/testdata`) when someone's edit arrives while a field is being typed in,
+keeping the cursor in place, then sends the result with the new base.
+
+### Presence
+
+Who has a note open is kept in memory only, never in the log.
+
+- `POST /presence` with `{"note": "…", "editing": bool, "gone": bool}`: anyone who can
+  see the note. A device with a shared note open says so every 15 seconds and when it
+  starts typing; `gone` when it leaves. The server forgets a device 40 seconds after its
+  last word and stops showing it as typing 8 seconds after its last keystroke.
+- The stream sends `event: presence` with `{"note", "user", "device", "editing", "gone"}`
+  to everyone who can see the note, except the device it is about. It has no `id`, so
+  it moves no cursor; a new stream gets everyone present first. Clients that do not
+  know the event ignore it.
+
 ### Sharing
 
 - `POST /notes/{id}/members` with `{"user": "…", "role": "editor" | "viewer"}`: owner only.

@@ -25,6 +25,10 @@ type Op struct {
 	Field      string          `json:"field"`
 	Value      json.RawMessage `json:"value"`
 	HLC        string          `json:"hlc"`
+	// Base is the clock of the value an edit of free text (a title, a
+	// body, an item's text) started from. If someone else wrote the field
+	// since, the server merges the two edits instead of keeping the later.
+	Base string `json:"base,omitempty"`
 }
 
 type OpsRequest struct {
@@ -38,6 +42,9 @@ type OpResult struct {
 	Applied bool   `json:"applied"`
 	Stale   bool   `json:"stale,omitempty"`
 	Error   string `json:"error,omitempty"`
+	// Merged: the edit was joined with another made meanwhile; the result
+	// comes back on the feed, to the sender too.
+	Merged bool `json:"merged,omitempty"`
 }
 
 type OpsResponse struct {

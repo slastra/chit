@@ -133,6 +133,33 @@ void main() {
     expect(await r.cursor(), 7);
   });
 
+  test('flushAndHeal resets the cursor if the snapshot fails after a refused op', () async {
+    final r = await fresh();
+    await r.applyChanges([], 12);
+    await r.applyLocal([
+      Op(collection: Collections.notes, id: 'n9', field: 'kind', value: 'text', hlc: '1795651200000-0000-me'),
+    ], me);
+    final api = ChitApi(
+      server: 'https://chit.example',
+      client: MockClient((req) async {
+        if (req.url.path.endsWith('/ops')) {
+          return http.Response(
+            jsonEncode({
+              'seq': 13,
+              'results': [
+                {'error': 'viewers cannot edit'},
+              ],
+            }),
+            200,
+          );
+        }
+        return http.Response('unavailable', 503);
+      }),
+    );
+    await expectLater(flushAndHeal(r, api), throwsA(isA<ApiError>()));
+    expect(await r.cursor(), 0);
+  });
+
   test('two connections to one file wait for each other instead of failing', () async {
     final dir = await Directory.systemTemp.createTemp('chit-wal');
     final file = File('${dir.path}/chit.sqlite');

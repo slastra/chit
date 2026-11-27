@@ -163,6 +163,15 @@ final syncStatusProvider = StreamProvider<SyncStatus>((ref) async* {
   yield* engine.statusStream;
 });
 
+/// Who else has each note open, by note: one entry per person, typing or
+/// not. Only while the stream is up; never stored.
+final presenceProvider = StreamProvider<Map<String, List<({String user, bool editing})>>>((ref) async* {
+  final engine = ref.watch(engineProvider);
+  if (engine == null) return;
+  yield engine.presence;
+  yield* engine.presenceStream;
+});
+
 /// Everything in the replica, live.
 final libraryProvider = StreamProvider<Library>((ref) => ref.watch(replicaProvider).watch());
 

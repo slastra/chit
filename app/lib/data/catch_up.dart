@@ -65,5 +65,9 @@ Future<bool> flushOnce(Replica replica, ChitApi api) async {
 /// only a fresh copy undoes it (the engine does the same, between streams).
 /// For the background, which has no stream running.
 Future<void> flushAndHeal(Replica replica, ChitApi api) async {
-  if (await flushOnce(replica, api)) await replica.replaceAll(await api.snapshot());
+  if (!await flushOnce(replica, api)) return;
+  // forget the cursor before fetching: if the snapshot fails or times out,
+  // the next sync still reloads instead of keeping the refused op
+  await replica.resetCursor();
+  await replica.replaceAll(await api.snapshot());
 }

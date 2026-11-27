@@ -82,8 +82,9 @@ final class SyncEngine {
   }
 
   /// Builds an op stamped with this device's clock.
-  Op op(String collection, String id, String field, Object? value) =>
-      Op(collection: collection, id: id, field: field, value: value, hlc: clock.now());
+  /// [base]: for free text, the clock of the value the edit started from.
+  Op op(String collection, String id, String field, Object? value, {String base = ''}) =>
+      Op(collection: collection, id: id, field: field, value: value, hlc: clock.now(), base: base);
 
   /// Applies edits here at once and queues them for the server.
   Future<List<OpResult>> edit(List<Op> ops) async {
@@ -109,6 +110,7 @@ final class SyncEngine {
     await _progress.close();
     await _sub?.cancel();
     nudge(); // wakes a sleeping loop, which then sees it is not running
+    await _presence.close();
     await _status.close();
   }
 
@@ -142,6 +144,8 @@ final class SyncEngine {
           await replica.resetCursor();
         }
         if (await replica.cursor() == 0) await _loadSnapshot();
+        // a second resync asked for while the snapshot was in flight
+        if (_resync) continue;
         _set(SyncPhase.connecting);
         final done = _streamDone = Completer<void>();
         void fail(Object e) {
@@ -187,6 +191,8 @@ final class SyncEngine {
         // whatever the stream delivered has landed before anything else
         await tail.catchError((_) {});
         if (!_running) return;
+        // whoever was here, as far as this stream knew, is not known now
+        _forgetPresence();
         // a resync: straight back round, to the snapshot
         if (_resync) continue;
         _set(SyncPhase.offline, 'disconnected');
@@ -235,9 +241,47 @@ final class SyncEngine {
           if (change.hlc.isNotEmpty) clock.observe(change.hlc);
         case CursorEvent(:final seq):
           cursor = seq;
+        case PresenceEvent():
+          _see(ev);
       }
     }
     await apply();
+  }
+
+  // ---- presence ----------------------------------------------------------------
+
+  /// Who else has each note open, by note, then by device: from the stream,
+  /// so it empties when the stream ends.
+  final Map<String, Map<String, ({String user, bool editing})>> _present = {};
+  final _presence = StreamController<Map<String, List<({String user, bool editing})>>>.broadcast();
+
+  /// Others in each note, one entry per person (typing if any of their
+  /// devices is), as it changes.
+  Stream<Map<String, List<({String user, bool editing})>>> get presenceStream => _presence.stream;
+  Map<String, List<({String user, bool editing})>> get presence => {
+    for (final MapEntry(key: note, value: devices) in _present.entries)
+      note: [
+        for (final user in {for (final d in devices.values) d.user})
+          (user: user, editing: devices.values.any((d) => d.user == user && d.editing)),
+      ],
+  };
+
+  void _see(PresenceEvent ev) {
+    if (ev.user == me) return;
+    final devices = _present[ev.note] ??= {};
+    if (ev.gone) {
+      devices.remove(ev.device);
+      if (devices.isEmpty) _present.remove(ev.note);
+    } else {
+      devices[ev.device] = (user: ev.user, editing: ev.editing);
+    }
+    if (!_presence.isClosed) _presence.add(presence);
+  }
+
+  void _forgetPresence() {
+    if (_present.isEmpty) return;
+    _present.clear();
+    if (!_presence.isClosed) _presence.add(presence);
   }
 
   static String _reason(Object e) => switch (e) {

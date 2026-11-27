@@ -43,6 +43,23 @@ final class CursorEvent extends StreamEvent {
   const CursorEvent(super.seq);
 }
 
+/// Someone's device has a note open (typing in it, if [editing]), or has
+/// left it ([gone]). Not in the log: it moves no cursor.
+final class PresenceEvent extends StreamEvent {
+  const PresenceEvent({
+    required this.note,
+    required this.user,
+    required this.device,
+    required this.editing,
+    required this.gone,
+  }) : super(0);
+  final String note;
+  final String user;
+  final String device;
+  final bool editing;
+  final bool gone;
+}
+
 /// chit-server's REST and SSE routes (docs/design.md). PocketBase handles
 /// accounts; everything note-shaped goes through /api/chit.
 final class ChitApi {
@@ -168,6 +185,13 @@ final class ChitApi {
     return (seq: (j['seq'] as num?)?.toInt() ?? 0, attachment: (j['attachment']! as Map).cast<String, Object?>());
   }
 
+  /// Says this device has [note] open (and whether it is typing in it), or
+  /// that it has left it. The server forgets it 40 seconds after the last
+  /// word, so a device with a note open says so every 15.
+  Future<void> presence(String note, {bool editing = false, bool gone = false}) async {
+    await _send('POST', '/api/chit/presence', body: {'note': note, 'editing': editing, 'gone': gone});
+  }
+
   /// A short-lived token for downloading protected files.
   Future<String> fileToken() async => ((await _send('POST', '/api/files/token'))! as Json)['token']! as String;
 
@@ -248,6 +272,15 @@ final class ChitApi {
         if (event == 'change' && data.isNotEmpty) {
           final change = Change.fromJson((jsonDecode(data.toString()) as Map).cast());
           yield ChangeEvent(seq ?? change.seq, change);
+        } else if (event == 'presence' && data.isNotEmpty) {
+          final j = (jsonDecode(data.toString()) as Map).cast<String, Object?>();
+          yield PresenceEvent(
+            note: j['note'] as String? ?? '',
+            user: j['user'] as String? ?? '',
+            device: j['device'] as String? ?? '',
+            editing: j['editing'] == true,
+            gone: j['gone'] == true,
+          );
         } else if (seq != null) {
           yield CursorEvent(seq);
         }

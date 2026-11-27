@@ -34,6 +34,7 @@ func Register(app core.App) *Broker {
 			Unbind(apis.DefaultBodyLimitMiddlewareId).
 			Bind(apis.BodyLimit(protocol.MaxAttachmentSize + 1<<20))
 		g.DELETE("/notes/{id}/members/{user}", func(e *core.RequestEvent) error { return handleUnshare(e, b) })
+		g.POST("/presence", func(e *core.RequestEvent) error { return handlePresence(e, b) })
 		return se.Next()
 	})
 	return b

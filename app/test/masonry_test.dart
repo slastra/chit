@@ -161,7 +161,7 @@ void main() {
     expect(grid.preview([for (final x in grid.targets) x.box]).last, rest['c']);
   });
 
-  testWidgets('a resize eases: cards stretch and glide, they do not jump', (t) async {
+  testWidgets('a resize lays out at the target width and glides cards into place', (t) async {
     Widget sized(double width) => Directionality(
       textDirection: TextDirection.ltr,
       child: Align(
@@ -184,21 +184,35 @@ void main() {
       ),
     );
     Rect rect(String id) => t.getRect(find.byKey(ValueKey(id)));
-    // two 196-wide columns in 400; three in 596
+    // two 196-wide columns in 400; three 193.33-wide columns in 596
     await t.pumpWidget(sized(400));
     expect(rect('c'), const Rect.fromLTWH(0, 108, 196, 100));
     await t.pumpWidget(sized(596));
-    await t.pump(const Duration(milliseconds: 16));
-    // on its way: wider than it was, not yet where it will be
-    expect(rect('b').width, greaterThan(196));
-    expect(rect('b').right, lessThan(596));
+    await t.pump(const Duration(milliseconds: 32));
+    // laid out at the final width right away, while c glides from row 2 to col 3
+    expect(rect('a').width, closeTo(193.33, 0.01));
+    expect(rect('c').left, greaterThan(0));
+    expect(rect('c').left, lessThan(402.67));
+    expect(rect('c').top, lessThan(108));
+    expect(rect('c').top, greaterThan(0));
     await t.pumpAndSettle();
     expect(rect('a'), const Rect.fromLTWH(0, 0, 193.33333333333334, 100));
     expect(rect('c').top, 0);
     expect(rect('c').left, closeTo(402.67, 0.01));
-    // and back, through a shrink
+    // shrinking: never overflows the smaller width, and c glides back down
     await t.pumpWidget(sized(400));
+    await t.pump(const Duration(milliseconds: 32));
+    expect(rect('b').width, closeTo(196, 0.01));
+    expect(rect('c').top, greaterThan(0));
+    expect(rect('c').top, lessThan(108));
     await t.pumpAndSettle();
     expect(rect('c'), const Rect.fromLTWH(0, 108, 196, 100));
+    // a discrete resize at the same column count glides the second column too
+    await t.pumpWidget(sized(500));
+    await t.pump(const Duration(milliseconds: 32));
+    expect(rect('b').left, greaterThan(204));
+    expect(rect('b').left, lessThan(254));
+    await t.pumpAndSettle();
+    expect(rect('b').left, closeTo(254, 0.01));
   });
 }

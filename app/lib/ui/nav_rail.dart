@@ -167,19 +167,13 @@ class NavRail extends ConsumerWidget {
       );
     }
     final width = collapsed ? collapsedWidth : expandedWidth;
-    // the two forms turn into each other: the width eases, and the new
-    // form is laid out at its full width from the start, revealed (or
-    // covered) by the moving edge
-    return AnimatedContainer(
-      duration: Durations.medium4,
-      curve: Easing.emphasizedDecelerate,
+    // instant width change: the board lays out once at its final width and
+    // its cards glide into place, instead of reflowing every frame across
+    // intermediate widths (and fighting a detail pane opening beside it)
+    return SizedBox(
       width: width,
-      color: scheme.surface,
-      clipBehavior: Clip.hardEdge,
-      child: OverflowBox(
-        alignment: AlignmentDirectional.centerStart,
-        minWidth: width,
-        maxWidth: width,
+      child: ColoredBox(
+        color: scheme.surface,
         child: Semantics(container: true, label: 'Navigation', child: content),
       ),
     );

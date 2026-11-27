@@ -13,6 +13,7 @@ import (
 	"github.com/pocketbase/pocketbase/tools/types"
 
 	"github.com/slastra/chit/internal/hlc"
+	"github.com/slastra/chit/internal/merge"
 	"github.com/slastra/chit/internal/order"
 	"github.com/slastra/chit/internal/protocol"
 )
@@ -37,20 +38,21 @@ type field struct {
 	kind      kind
 	ownerOnly bool // notes: only the owner may set it
 	create    bool // set only when the record is created
+	merge     bool // free text: concurrent edits merge (Op.Base) instead of the later winning
 }
 
 var specs = map[string]map[string]field{
 	protocol.Notes: {
 		"kind":    {kind: kText},
-		"title":   {kind: kText},
-		"body":    {kind: kText},
+		"title":   {kind: kText, merge: true},
+		"body":    {kind: kText, merge: true},
 		"color":   {kind: kText},
 		"trashed": {kind: kDate, ownerOnly: true},
 		"deleted": {kind: kBool, ownerOnly: true},
 	},
 	protocol.Items: {
 		"note":    {kind: kText, create: true},
-		"text":    {kind: kText},
+		"text":    {kind: kText, merge: true},
 		"checked": {kind: kBool},
 		"order":   {kind: kText},
 		"indent":  {kind: kInt},
@@ -232,9 +234,32 @@ func applyGroup(tx core.App, me *core.Record, device string, ops []protocol.Op, 
 
 	clocks := clocksOf(rec)
 	var won []int
+	// edits merged with one made meanwhile, and the clock each result takes
+	merged := map[int]string{}
 	for _, i := range live {
 		op := ops[i]
 		f := spec[op.Field]
+		// Free text edited from an older value than the one there now:
+		// someone else wrote it meanwhile. Join the two edits (whichever
+		// clock is later), so neither is lost, and stamp the result past
+		// both. A resend of an edit already in (its clock is the field's)
+		// is stale as ever.
+		if f.merge && !created && op.Base != "" && op.Base != clocks[op.Field] && op.HLC != clocks[op.Field] {
+			base, ok, err := baseValue(tx, noteID, g.collection, g.id, op.Field, op.Base)
+			if err != nil {
+				return err
+			}
+			if ok {
+				values[i] = merge.Merge(base, rec.GetString(op.Field), values[i].(string))
+				serverClock.Observe(op.HLC)
+				serverClock.Observe(clocks[op.Field])
+				merged[i] = serverClock.Now()
+				rec.Set(op.Field, values[i])
+				clocks[op.Field] = merged[i]
+				won = append(won, i)
+				continue
+			}
+		}
 		// stale first: a client resending a batch whose answer it lost (or
 		// two of its isolates both flushing) gets "stale", which it acks,
 		// rather than a create-only or owner-only error that makes it
@@ -297,10 +322,15 @@ func applyGroup(tx core.App, me *core.Record, device string, ops []protocol.Op, 
 		for _, i := range won {
 			op := ops[i]
 			v, _ := json.Marshal(rec.Get(op.Field))
+			h, dev := op.HLC, device
+			if stamp, ok := merged[i]; ok {
+				// a merge is news to the sender too: it holds only its half
+				h, dev = stamp, ""
+			}
 			if _, err := appendChange(tx, entry{
 				scope: scope, user: reader, note: noteID, kind: protocol.KindSet,
 				collection: g.collection, record: g.id, field: op.Field, value: v,
-				hlc: op.HLC, by: me.Id, device: device,
+				hlc: h, by: me.Id, device: dev,
 			}); err != nil {
 				return err
 			}
@@ -308,6 +338,7 @@ func applyGroup(tx core.App, me *core.Record, device string, ops []protocol.Op, 
 	}
 	for _, i := range won {
 		results[i].Applied = true
+		_, results[i].Merged = merged[i]
 	}
 	return nil
 }
@@ -417,4 +448,49 @@ func checkLabels(tx core.App, userID string, ids []string) (string, error) {
 		}
 	}
 	return "", nil
+}
+
+// serverClock stamps the result of a merge: past both edits it joins.
+var serverClock = hlc.New("srv")
+
+// baseValue finds the value field held when its clock was base: from the
+// edit that wrote it, or from the whole record when it was created (or
+// copied into a new member's feed). Not found (the log was compacted, or a
+// bad base): the edit falls back to the later one winning.
+func baseValue(tx core.App, noteID, collection, record, field, base string) (string, bool, error) {
+	var rows []struct {
+		Kind  string `db:"kind"`
+		Field string `db:"field"`
+		Value string `db:"value"`
+		HLC   string `db:"hlc"`
+	}
+	err := tx.DB().NewQuery(`
+		SELECT kind, field, value, hlc FROM chit_changes
+		WHERE scope = 'note' AND note = {:note} AND collection = {:collection} AND record = {:record}
+		  AND ((kind = 'set' AND field = {:field} AND hlc = {:base}) OR kind = 'record')
+		ORDER BY seq DESC
+	`).Bind(dbx.Params{"note": noteID, "collection": collection, "record": record, "field": field, "base": base}).All(&rows)
+	if err != nil {
+		return "", false, err
+	}
+	for _, r := range rows {
+		switch r.Kind {
+		case protocol.KindSet:
+			var s string
+			if json.Unmarshal([]byte(r.Value), &s) == nil {
+				return s, true, nil
+			}
+		case protocol.KindRecord:
+			var rec map[string]any
+			if json.Unmarshal([]byte(r.Value), &rec) != nil {
+				continue
+			}
+			clocks, _ := rec["clocks"].(map[string]any)
+			if c, _ := clocks[field].(string); c == base {
+				s, _ := rec[field].(string)
+				return s, true, nil
+			}
+		}
+	}
+	return "", false, nil
 }
