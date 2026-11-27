@@ -93,10 +93,22 @@ final class PhoneNotifications {
     };
   }
 
+  /// The database as the app left it when it went out of sight.
+  String? _mark;
+
+  /// Tells the app's database streams that another isolate wrote (the
+  /// worker, a notification's action), so the screen catches up.
+  void _written() {
+    final db = ref.read(dbProvider);
+    db.markTablesUpdated([db.records, db.outbox, db.meta, db.uploads]);
+    ref.read(engineProvider)?.nudge();
+  }
+
   Future<void> _hidden() async {
     final me = ref.read(sessionProvider).value?.user.id;
     if (me == null) return;
     final replica = ref.read(replicaProvider);
+    _mark = await replica.writeMark();
     // what was on screen isn't news
     await replica.setMeta('notified_seq', '${await replica.cursor()}');
     _describer = await describerFor(replica, await replica.read(), me);
@@ -104,11 +116,16 @@ final class PhoneNotifications {
 
   Future<void> _resumed() async {
     _describer = null;
-    final db = ref.read(dbProvider);
-    // the worker may have written underneath
-    db.markTablesUpdated([db.records, db.outbox, db.meta, db.uploads]);
-    ref.read(engineProvider)?.nudge();
-    await clearActivity(ref.read(replicaProvider));
+    final replica = ref.read(replicaProvider);
+    // the worker may have written underneath; if not, the screen is current
+    // and re-reading every record would only cost
+    if (_mark == null || await replica.writeMark() != _mark) {
+      _written();
+    } else {
+      ref.read(engineProvider)?.nudge();
+    }
+    _mark = null;
+    await clearActivity(replica);
   }
 
   void _response(NotificationResponse r) {
@@ -138,9 +155,7 @@ final class PhoneNotifications {
         // asked live: an app started behind the lock screen never was in front
         reply.send(WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed);
       case 'changed':
-        final db = ref.read(dbProvider);
-        db.markTablesUpdated([db.records, db.outbox, db.meta]);
-        ref.read(engineProvider)?.nudge();
+        _written();
         reply.send(true);
       case 'action' when m.length == 4:
         reply.send(await _action(m[1] as String, m[2] as String));

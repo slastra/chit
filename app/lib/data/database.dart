@@ -74,6 +74,9 @@ class ChitDb extends _$ChitDb {
     onUpgrade: (m, from, to) async {
       if (from < 2) await m.createTable(uploads);
     },
+    // a revoke deletes a note's records by note; without this it reads the
+    // whole table. Idempotent, so it needs no schema bump
+    beforeOpen: (_) => customStatement('CREATE INDEX IF NOT EXISTS records_note ON records (note)'),
   );
 
   // The web build runs SQLite as WebAssembly in a worker; the native

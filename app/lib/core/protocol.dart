@@ -103,7 +103,9 @@ final class Person {
 }
 
 /// Records as the replica keeps them: their wire JSON. These typed views
-/// read that JSON; the replica merges the maps field by field.
+/// read that JSON; the replica merges the maps field by field. A view is
+/// made fresh from a stored row and never changed, so what is costly to
+/// read (parsed, split, copied) is worked out once.
 final class Note {
   Note(this.json);
   final Json json;
@@ -122,11 +124,11 @@ final class Note {
   Clocks get clocks => _clocks(json['clocks']);
 
   /// What to show: the title, else the start of the body.
-  String get label {
+  late final String label = () {
     if (title.isNotEmpty) return title;
     final line = body.trim().split('\n').first;
     return line.isEmpty ? '' : (line.length > 60 ? '${line.substring(0, 60)}…' : line);
-  }
+  }();
 }
 
 final class Item {
@@ -172,7 +174,7 @@ final class NoteState {
   String get note => json['note'] as String? ?? '';
   bool get pinned => json['pinned'] == true;
   bool get archived => json['archived'] == true;
-  List<String> get labels => [...((json['labels'] as List?) ?? const []).cast<String>()];
+  late final List<String> labels = List.unmodifiable(((json['labels'] as List?) ?? const []).cast<String>());
   String get reminder => json['reminder'] as String? ?? '';
   bool get reminderDone => json['reminder_done'] == true;
 
@@ -195,7 +197,7 @@ final class Attachment {
   String get created => json['created'] as String? ?? '';
 
   /// What the app does with it: show, play, page through, or offer.
-  MediaKind get kind => MediaKind.of(type, name);
+  late final MediaKind kind = MediaKind.of(type, name);
   bool get isImage => kind == MediaKind.image;
 
   /// Set only on this device, for a file still waiting to upload.

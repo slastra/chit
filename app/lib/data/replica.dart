@@ -171,6 +171,15 @@ final class Replica {
     ];
   }
 
+  /// What another isolate's writes would move: the feed cursor (a
+  /// catch-up) and the outbox (an edit made from a notification). Two
+  /// marks that differ mean the database changed underneath.
+  Future<String> writeMark() async {
+    final count = db.outbox.seq.count(), last = db.outbox.seq.max();
+    final row = await (db.selectOnly(db.outbox)..addColumns([count, last])).getSingle();
+    return '${await cursor()}/${row.read(count)}/${row.read(last)}';
+  }
+
   Stream<int> watchPendingCount() {
     final count = db.outbox.seq.count();
     return (db.selectOnly(db.outbox)..addColumns([count])).map((r) => r.read(count) ?? 0).watchSingle();
@@ -328,6 +337,17 @@ final class Library {
   final Map<String, List<Attachment>> attachments; // by note
   final List<Label> labels; // live ones, by name
 
+  /// The notes by id.
+  late final Map<String, Note> notesById = {for (final n in notes) n.id: n};
+
+  /// Every live attachment by id.
+  late final Map<String, Attachment> attachmentsById = {
+    for (final list in attachments.values)
+      for (final a in list) a.id: a,
+  };
+
+  Note? note(String id) => notesById[id];
+
   static final empty = Library(
     notes: const [],
     items: const {},
@@ -384,7 +404,10 @@ final class Library {
     );
   }
 
-  NoteState stateOf(String note) => states[note] ?? NoteState({'note': note});
+  /// The reader's state for [note]; an empty one (not pinned, no labels)
+  /// for a note they have never touched.
+  NoteState stateOf(String note) => states[note] ?? (_blank[note] ??= NoteState({'note': note}));
+  final _blank = <String, NoteState>{};
 
   /// The note's labels for the reader, by name; ids of deleted or unknown
   /// labels are left out.

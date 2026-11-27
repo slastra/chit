@@ -347,7 +347,7 @@ class _NotePageState extends ConsumerState<NotePage> {
     _engine = ref.watch(engineProvider);
     final lib = ref.watch(libraryProvider).value ?? Library.empty;
     _library = lib;
-    final note = lib.notes.where((n) => n.id == _id).firstOrNull;
+    final note = lib.note(_id);
     final me = ref.watch(sessionProvider).value?.user.id ?? '';
 
     // An open note that went away (deleted elsewhere, access revoked).

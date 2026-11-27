@@ -172,7 +172,7 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   Widget _liftedCard(String id) {
     final lib = ref.read(libraryProvider).value ?? Library.empty;
-    final n = lib.notes.where((n) => n.id == id).firstOrNull;
+    final n = lib.note(id);
     return n == null ? const SizedBox.shrink() : NoteCard(note: n, library: lib);
   }
 
@@ -734,7 +734,7 @@ class _HomePageState extends ConsumerState<HomePage> {
   List<Widget> _noteActions(Library lib, List<String> requested, List<Note> shown, {int fits = 0, bool menu = false}) {
     if (ref.read(engineProvider) == null) return const [];
     final me = ref.read(sessionProvider).value?.user.id ?? '';
-    final notes = [for (final id in requested) ?lib.notes.where((n) => n.id == id).firstOrNull];
+    final notes = [for (final id in requested) ?lib.note(id)];
     if (notes.isEmpty) return const [];
     // the notes that still exist: everything below acts on these alone
     final ids = [for (final n in notes) n.id];

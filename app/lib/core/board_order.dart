@@ -8,7 +8,11 @@ import 'protocol.dart';
 
 /// A note's place on the board: its order key, or "" for no place yet (a
 /// missing or broken key alike).
-String boardKey(NoteState st) => isValidOrderKey(st.order) ? st.order : '';
+String boardKey(NoteState st) => _keys[st] ??= isValidOrderKey(st.order) ? st.order : '';
+
+/// Each state's checked key, worked out once: a sort compares each note
+/// many times.
+final _keys = Expando<String>('boardKey');
 
 /// Board order: pinned first; within a section, notes with no place yet on
 /// top, newest first; then the placed ones by key (byte order, as Go's).

@@ -21,7 +21,7 @@ const missedWindow = Duration(hours: 12);
 /// The reminder's notification text: the note's title, and its text or its
 /// open items.
 ({String title, String body}) reminderText(Library lib, String noteId) {
-  final note = lib.notes.firstWhere((n) => n.id == noteId);
+  final note = lib.note(noteId)!;
   final items = lib.items[noteId] ?? const [];
   final body = note.isList
       ? items.where((i) => !i.checked).map((i) => i.text.trim()).where((t) => t.isNotEmpty).join(', ')

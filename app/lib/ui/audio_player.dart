@@ -19,16 +19,9 @@ const _miniMargin = 8.0;
 /// The audio on the player, with its note: null when nothing is loaded or
 /// what is loaded is a video (that plays where it is shown).
 ({Attachment audio, Note? note})? _nowPlaying(Library lib, String? id) {
-  if (id == null) return null;
-  for (final MapEntry(key: noteId, value: list) in lib.attachments.entries) {
-    for (final a in list) {
-      if (a.id == id) {
-        if (a.kind != MediaKind.audio) return null;
-        return (audio: a, note: lib.notes.where((n) => n.id == noteId).firstOrNull);
-      }
-    }
-  }
-  return null;
+  final a = id == null ? null : lib.attachmentsById[id];
+  if (a == null || a.kind != MediaKind.audio) return null;
+  return (audio: a, note: lib.note(a.note));
 }
 
 /// Whether the full player is up (the mini player steps aside for it).
@@ -226,7 +219,7 @@ class _FullPlayer extends ConsumerWidget {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final lib = ref.watch(libraryProvider).value ?? Library.empty;
-    final note = lib.notes.where((n) => n.id == audio.note).firstOrNull;
+    final note = lib.note(audio.note);
     Future<void> skip(MediaDeck deck, int seconds) async {
       final p = deck.player;
       final to = p.state.position + Duration(seconds: seconds);

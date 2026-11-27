@@ -69,7 +69,7 @@ class _ShareSheetState extends ConsumerState<_ShareSheet> {
     final lib = ref.watch(libraryProvider).value ?? Library.empty;
     final me = ref.watch(sessionProvider).value?.user.id ?? '';
     final people = ref.watch(peopleProvider).value ?? const <Person>[];
-    final note = lib.notes.where((n) => n.id == widget.noteId).firstOrNull;
+    final note = lib.note(widget.noteId);
     if (note == null) return const SizedBox.shrink();
     final members = lib.members[note.id] ?? const <Member>[];
     final role = roleOf(note, members, me);

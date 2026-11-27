@@ -7,7 +7,10 @@ const _digits = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
 
 int _digit(String c) => _digits.indexOf(c);
 
-bool isValidOrderKey(String k) => k.isNotEmpty && !k.endsWith('0') && k.split('').every((c) => _digits.contains(c));
+bool isValidOrderKey(String k) => _validKey.hasMatch(k);
+
+/// Base-62 digits, not ending in the zero digit.
+final _validKey = RegExp(r'^[0-9A-Za-z]*[1-9A-Za-z]$');
 
 /// A key after [a] ("" for an empty list). Steps the first digit it can; when
 /// every digit is 'z' it extends with '1', so appends stay short.
