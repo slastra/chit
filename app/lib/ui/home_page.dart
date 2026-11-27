@@ -80,6 +80,11 @@ class _HomePageState extends ConsumerState<HomePage> {
   void _clearSelection() => setState(_selected.clear);
   String _query = '';
   final _scaffold = GlobalKey<ScaffoldState>();
+
+  /// Whether the modal rail is up. Android only asks the app about Back when
+  /// told a pop is pending, and a drawer's own history entry doesn't say so
+  /// on the first page: without this, Back would leave the app.
+  bool _railOpen = false;
   final _gridKey = GlobalKey();
   late final _drag = BoardDrag(gridKey: _gridKey, cardFor: _liftedCard, onDrop: _onDrop)
     ..addListener(() {
@@ -471,6 +476,7 @@ class _HomePageState extends ConsumerState<HomePage> {
 
     final scaffold = Scaffold(
       key: _scaffold,
+      onDrawerChanged: (open) => setState(() => _railOpen = open),
       // compact and medium: the expanded rail comes over the content
       drawer: wide
           ? null
@@ -516,11 +522,17 @@ class _HomePageState extends ConsumerState<HomePage> {
       // rail, which has the split button at its foot.
       floatingActionButton: showFab ? const NewNoteFabMenu() : null,
     );
-    // while selecting, Back and Escape clear it, Ctrl+A takes every note shown
+    // Back closes the modal rail, then clears the selection; while
+    // selecting, Escape clears it too and Ctrl+A takes every note shown
     return PopScope(
-      canPop: selected.isEmpty,
+      canPop: selected.isEmpty && !_railOpen,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _clearSelection();
+        if (didPop) return;
+        if (_scaffold.currentState?.isDrawerOpen ?? false) {
+          _scaffold.currentState?.closeDrawer();
+        } else {
+          _clearSelection();
+        }
       },
       child: Focus(
         focusNode: _selectionFocus,
