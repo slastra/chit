@@ -570,7 +570,12 @@ class _NotePageState extends ConsumerState<NotePage> {
         : widget.inPane
         ? themeFor(appTheme.colorScheme.copyWith(surface: appTheme.colorScheme.surfaceContainerHigh), spec)
         : appTheme;
-    final text = theme.textTheme;
+    // A theme only gets its type sizes when a Theme widget localizes it, so
+    // a note color's theme, read here before that, would give 14dp titles
+    final text = ThemeData.localize(
+      theme,
+      theme.typography.geometryThemeFor(MaterialLocalizations.of(context).scriptCategory),
+    ).textTheme;
 
     // A row folds out of its list and into the other when checked or
     // unchecked here (check_motion.dart); a change from elsewhere just moves.
@@ -1121,6 +1126,12 @@ class _ItemRowState extends State<_ItemRow> {
                     color: widget.checked ? theme.colorScheme.onSurfaceVariant : null,
                   ),
                   decoration: const InputDecoration(hintText: 'List item', isDense: true, border: InputBorder.none),
+                  // a long item wraps rather than scrolling out of sight;
+                  // still one line of text, so Enter goes to the next item
+                  // and a pasted line break becomes a space
+                  maxLines: null,
+                  keyboardType: TextInputType.text,
+                  inputFormatters: [FilteringTextInputFormatter.deny(RegExp(r'[\r\n]+'), replacementString: ' ')],
                   textInputAction: TextInputAction.next,
                   textCapitalization: TextCapitalization.sentences,
                   onChanged: widget.onChanged,

@@ -2,6 +2,10 @@
 
 Self-hosted notes and shared checklists for the desktop, phone, and web.
 
+![chit on a phone: the board, a shared list with someone editing it, and dark mode](docs/store/readme-phones.png)
+
+![chit on the desktop: the board with a list open in the side pane](docs/store/readme-desktop.png)
+
 chit is a notes app for a household. A single Go server holds the accounts and the sync
 log. Every device keeps its own copy and works offline, then catches up over a server-sent
 event stream. The app is Flutter, built for Linux, Android and the web (the server serves

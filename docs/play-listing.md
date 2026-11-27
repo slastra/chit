@@ -46,3 +46,19 @@ Private by design
 
 chit needs a chit server and an account on it. Accounts are by invitation from whoever
 runs the server.
+
+## Graphics
+
+`docs/store/` holds the store graphics: six phone screenshots (`play-*.png`, 1080x1920),
+the feature graphic (`feature-graphic.png`, 1024x500) and the README's images. To
+redo them after the UI changes:
+
+1. Start a throwaway `chit-server` on 127.0.0.1 with a superuser `admin@example.com` /
+   `adminpass123`, and run `tool/store/seed.py http://127.0.0.1:PORT OUT` to stage a
+   household's notes (every note type, a second person to share with).
+2. Run the Linux build in a headless sway at 1080x2400, scale 2.625 (a Pixel-sized phone),
+   signed in with `OUT/session.json`, and capture `raw-board`, `raw-list`, `raw-trip`,
+   `raw-paint`, `raw-player` and `raw-dark` with grim; then `raw-wide` at 2560x1600,
+   scale 2, with a note open in the pane. `OUT/angelica.json` posts presence for the
+   shared-list shots.
+3. `tool/store/compose.py RAW_DIR docs/store` frames them.
