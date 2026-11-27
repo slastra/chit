@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../core/protocol.dart';
@@ -12,6 +11,7 @@ import '../core/roles.dart';
 import '../data/replica.dart';
 import '../state/providers.dart';
 import 'attachments.dart';
+import 'note_routes.dart';
 import 'media_player.dart';
 import 'check_motion.dart';
 import 'note_colors.dart';
@@ -33,6 +33,7 @@ class NoteCard extends ConsumerStatefulWidget {
     this.onSelect,
     this.longPressSelects = false,
     this.overhang = 0,
+    this.open = false,
   });
 
   final Note note;
@@ -59,6 +60,10 @@ class NoteCard extends ConsumerStatefulWidget {
   /// for the selection check that sits on the card's corner (the grid's
   /// [Masonry.overhang]).
   final double overhang;
+
+  /// Whether this note is the one open in the detail pane beside the board:
+  /// its card takes the pane's tone, tying the two together.
+  final bool open;
 
   @override
   ConsumerState<NoteCard> createState() => _NoteCardState();
@@ -135,7 +140,7 @@ class _NoteCardState extends ConsumerState<NoteCard> {
             (widget.selecting || keys.isControlPressed || keys.isShiftPressed || keys.isMetaPressed)) {
           select();
         } else {
-          context.push('/note/${note.id}');
+          unawaited(openNote(context, '/note/${note.id}'));
         }
       },
       onLongPress: widget.longPressSelects ? select : null,
@@ -280,20 +285,32 @@ class _NoteCardState extends ConsumerState<NoteCard> {
     // corner, half off the card (as Keep draws it)
     final selected = widget.selected;
     final selectedSide = BorderSide(color: theme.colorScheme.primary, width: 2);
-    final plain = scheme == null
+    final openSide = BorderSide(color: theme.colorScheme.outline);
+    final surface = scheme == null
         ? Card.outlined(
-            color: theme.colorScheme.surface,
+            color: widget.open ? theme.colorScheme.surfaceContainerHigh : theme.colorScheme.surface,
             shape: RoundedRectangleBorder(
               borderRadius: corners,
-              side: selected ? selectedSide : BorderSide(color: theme.colorScheme.outlineVariant),
+              side: selected
+                  ? selectedSide
+                  : (widget.open ? openSide : BorderSide(color: theme.colorScheme.outlineVariant)),
             ),
             child: body,
           )
         : Card.filled(
             color: scheme.primaryContainer,
-            shape: RoundedRectangleBorder(borderRadius: corners, side: selected ? selectedSide : BorderSide.none),
+            shape: RoundedRectangleBorder(
+              borderRadius: corners,
+              side: selected ? selectedSide : (widget.open ? openSide : BorderSide.none),
+            ),
             child: body,
           );
+    // where the note's page grows from, and shrinks back to
+    final plain = NoteOrigin(
+      id: note.id,
+      radius: corners.resolve(Directionality.of(context)).topLeft.x,
+      child: surface,
+    );
     // the check shows on the selected cards, and under the mouse (where a
     // click on it starts or adds to a selection); a touch selects by a long
     // press, then by a tap anywhere on a card

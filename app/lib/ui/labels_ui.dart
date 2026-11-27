@@ -7,6 +7,7 @@ import '../core/labels.dart';
 import '../core/protocol.dart';
 import '../data/replica.dart';
 import '../state/providers.dart';
+import 'expressive.dart';
 import 'feedback.dart';
 import 'home_page.dart' show isExpanded;
 
@@ -133,21 +134,26 @@ class _LabelPickerState extends ConsumerState<_LabelPicker> {
             shrinkWrap: true,
             padding: const EdgeInsets.only(bottom: 8),
             children: [
-              for (final l in shown)
-                CheckboxListTile(
-                  controlAffinity: ListTileControlAffinity.leading,
-                  tristate: true,
-                  value: labelState([for (final n in widget.notes) lib.stateOf(n).labels], l.id),
-                  // a dash (some of the notes) checks it for all of them
-                  onChanged: (v) => setLabel(
-                    ref,
-                    widget.notes,
-                    l.id,
-                    on: labelState([for (final n in widget.notes) lib.stateOf(n).labels], l.id) != true,
-                  ),
-                  title: Text(l.name),
-                ),
-              if (canCreate) ListTile(leading: const Icon(Icons.add), title: Text('Create "$typed"'), onTap: _create),
+              SegmentedList(
+                children: [
+                  for (final l in shown)
+                    CheckboxListTile(
+                      controlAffinity: ListTileControlAffinity.leading,
+                      tristate: true,
+                      value: labelState([for (final n in widget.notes) lib.stateOf(n).labels], l.id),
+                      // a dash (some of the notes) checks it for all of them
+                      onChanged: (v) => setLabel(
+                        ref,
+                        widget.notes,
+                        l.id,
+                        on: labelState([for (final n in widget.notes) lib.stateOf(n).labels], l.id) != true,
+                      ),
+                      title: Text(l.name),
+                    ),
+                  if (canCreate)
+                    ListTile(leading: const Icon(Icons.add), title: Text('Create "$typed"'), onTap: _create),
+                ],
+              ),
               if (shown.isEmpty && !canCreate)
                 Padding(
                   padding: const EdgeInsets.all(24),
@@ -249,7 +255,9 @@ class _EditLabelsState extends ConsumerState<_EditLabels> {
           ),
         ),
         const SizedBox(height: 8),
-        for (final l in lib.labels) _LabelRow(key: ValueKey(l.id), label: l),
+        SegmentedList(
+          children: [for (final l in lib.labels) _LabelRow(key: ValueKey(l.id), label: l)],
+        ),
       ],
     );
     if (widget.fullscreen) {

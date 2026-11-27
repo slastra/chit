@@ -1,9 +1,9 @@
 import 'package:flutter/physics.dart';
 import 'package:flutter/services.dart';
-import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'attachments.dart';
+import 'note_routes.dart';
 
 /// What a note made now starts with: the label being looked at, or a
 /// reminder when made from the Reminders shelf (as Keep does). The board
@@ -27,14 +27,14 @@ enum NewKind {
 Future<void> startNote(BuildContext context, NewKind kind) async {
   switch (kind) {
     case NewKind.note:
-      await context.push('/note/new');
+      await openNote(context, '/note/new');
     case NewKind.list:
-      await context.push('/note/new?list=1');
+      await openNote(context, '/note/new?list=1');
     case NewKind.link:
       final url = await _askLink(context);
       if (url == null || !context.mounted) return;
       final host = Uri.tryParse(url)?.host.replaceFirst(RegExp(r'^www\.'), '') ?? '';
-      await context.push(Uri(path: '/note/new', queryParameters: {'title': host, 'text': url}).toString());
+      await openNote(context, Uri(path: '/note/new', queryParameters: {'title': host, 'text': url}).toString());
     case NewKind.image:
       final picked = await pickFrom(context, AddSource.media);
       if (context.mounted) await newNoteWithFiles(context, picked);
@@ -331,10 +331,15 @@ class _NewNoteFabMenuState extends State<NewNoteFabMenu> with SingleTickerProvid
                   if (i < n - 1) const SizedBox(height: 4),
                 ],
               if (unfolded) const SizedBox(height: 8),
-              Focus(
-                onKeyEvent: _fabKey,
-                skipTraversal: true,
-                child: _ToggleFab(open: _open, scheme: scheme, focusNode: _fab, onPressed: () => _set(!_open)),
+              // a new note grows out of the FAB
+              NoteOrigin(
+                id: NoteOrigins.fresh,
+                radius: 16,
+                child: Focus(
+                  onKeyEvent: _fabKey,
+                  skipTraversal: true,
+                  child: _ToggleFab(open: _open, scheme: scheme, focusNode: _fab, onPressed: () => _set(!_open)),
+                ),
               ),
             ],
           ),

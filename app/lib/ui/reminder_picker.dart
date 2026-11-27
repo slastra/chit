@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../core/reminders.dart';
+import 'expressive.dart';
 import 'home_page.dart' show isExpanded;
 
 /// Asks for a reminder date and time with Material's pickers. Null when
@@ -108,17 +109,21 @@ Future<void> showReminderSheet(
           padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
           child: Text('Remind me', style: Theme.of(sheet).textTheme.titleMedium),
         ),
-        for (final c in _choices(current: current, onSet: onSet, onClear: onClear))
-          ListTile(
-            leading: Icon(c.icon),
-            title: Text(c.label),
-            trailing: c.detail.isEmpty ? null : Text(c.detail),
-            onTap: () {
-              Navigator.pop(sheet);
-              c.run(context);
-            },
-          ),
-        const SizedBox(height: 8),
+        SegmentedList(
+          children: [
+            for (final c in _choices(current: current, onSet: onSet, onClear: onClear))
+              ListTile(
+                leading: Icon(c.icon),
+                title: Text(c.label),
+                trailing: c.detail.isEmpty ? null : Text(c.detail),
+                onTap: () {
+                  Navigator.pop(sheet);
+                  c.run(context);
+                },
+              ),
+          ],
+        ),
+        const SizedBox(height: 16),
       ],
     ),
   ),

@@ -480,250 +480,246 @@ class _NotePageState extends ConsumerState<NotePage> {
 
     return Theme(
       data: theme,
-      child: Scaffold(
-        backgroundColor: theme.colorScheme.surface,
-        appBar: AppBar(
-          leading: widget.inDialog
-              ? IconButton(tooltip: 'Close', icon: const Icon(Icons.close), onPressed: () => context.pop())
-              : null,
-          actions: [
-            // the owner shares; anyone it is shared with sees with whom. On
-            // compact windows the bar keeps three actions (Material's limit
-            // for a small app bar) and Share goes under More
-            if (roomy && _exists && note != null && (owned || shared))
+      // in the detail pane, Escape closes the note (a page has Back)
+      child: CallbackShortcuts(
+        bindings: {if (widget.inDialog) const SingleActivator(LogicalKeyboardKey.escape): () => context.pop()},
+        child: Scaffold(
+          backgroundColor: theme.colorScheme.surface,
+          appBar: AppBar(
+            leading: widget.inDialog
+                ? IconButton(tooltip: 'Close', icon: const Icon(Icons.close), onPressed: () => context.pop())
+                : null,
+            actions: [
+              // the owner shares; anyone it is shared with sees with whom. On
+              // compact windows the bar keeps three actions (Material's limit
+              // for a small app bar) and Share goes under More
+              if (roomy && _exists && note != null && (owned || shared))
+                IconButton(
+                  tooltip: owned ? (shared ? 'Shared: change who' : 'Share') : 'Shared with you',
+                  icon: Icon(shared ? Icons.group_outlined : Icons.person_add_alt_outlined),
+                  onPressed: () => showShareSheet(context, _id),
+                ),
+              ReminderButton(current: reminder, onSet: _remind, onClear: () => _remind(null)),
               IconButton(
-                tooltip: owned ? (shared ? 'Shared: change who' : 'Share') : 'Shared with you',
-                icon: Icon(shared ? Icons.group_outlined : Icons.person_add_alt_outlined),
-                onPressed: () => showShareSheet(context, _id),
+                tooltip: state.pinned ? 'Unpin' : 'Pin',
+                isSelected: state.pinned,
+                icon: const Icon(Icons.push_pin_outlined),
+                selectedIcon: const Icon(Icons.push_pin),
+                onPressed: () => _setState('pinned', !state.pinned),
               ),
-            ReminderButton(current: reminder, onSet: _remind, onClear: () => _remind(null)),
-            IconButton(
-              tooltip: state.pinned ? 'Unpin' : 'Pin',
-              isSelected: state.pinned,
-              icon: const Icon(Icons.push_pin_outlined),
-              selectedIcon: const Icon(Icons.push_pin),
-              onPressed: () => _setState('pinned', !state.pinned),
-            ),
-            IconButton(
-              tooltip: state.archived ? 'Unarchive' : 'Archive',
-              isSelected: state.archived,
-              icon: const Icon(Icons.archive_outlined),
-              selectedIcon: const Icon(Icons.unarchive_outlined),
-              onPressed: _exists ? archive : null,
-            ),
-            MenuAnchor(
-              builder: (context, ctl, _) => IconButton(
-                tooltip: 'More options',
-                icon: const Icon(Icons.more_vert),
-                onPressed: () => ctl.isOpen ? ctl.close() : ctl.open(),
+              IconButton(
+                tooltip: state.archived ? 'Unarchive' : 'Archive',
+                isSelected: state.archived,
+                icon: const Icon(Icons.archive_outlined),
+                selectedIcon: const Icon(Icons.unarchive_outlined),
+                onPressed: _exists ? archive : null,
               ),
-              menuChildren: [
-                if (!roomy && _exists && note != null && (owned || shared))
-                  MenuItemButton(
-                    leadingIcon: Icon(shared ? Icons.group_outlined : Icons.person_add_alt_outlined),
-                    onPressed: () => showShareSheet(context, _id),
-                    child: Text(owned ? (shared ? 'Shared with' : 'Share') : 'Shared with you'),
-                  ),
-                // labels are the reader's own, viewers' too
-                if (!trashed)
-                  MenuItemButton(
-                    leadingIcon: const Icon(Icons.label_outline),
-                    onPressed: _labelNote,
-                    child: Text(labels.isEmpty ? 'Add label' : 'Change labels'),
-                  ),
-                if (owned && _exists)
-                  MenuItemButton(
-                    leadingIcon: Icon(trashed ? Icons.restore_from_trash_outlined : Icons.delete_outline),
-                    onPressed: trash,
-                    child: Text(trashed ? 'Restore' : 'Delete'),
-                  ),
-                if (owned && trashed)
-                  MenuItemButton(
-                    leadingIcon: const Icon(Icons.delete_forever_outlined),
-                    onPressed: deleteForever,
-                    child: const Text('Delete forever'),
+              MenuAnchor(
+                builder: (context, ctl, _) => IconButton(
+                  tooltip: 'More options',
+                  icon: const Icon(Icons.more_vert),
+                  onPressed: () => ctl.isOpen ? ctl.close() : ctl.open(),
+                ),
+                menuChildren: [
+                  if (!roomy && _exists && note != null && (owned || shared))
+                    MenuItemButton(
+                      leadingIcon: Icon(shared ? Icons.group_outlined : Icons.person_add_alt_outlined),
+                      onPressed: () => showShareSheet(context, _id),
+                      child: Text(owned ? (shared ? 'Shared with' : 'Share') : 'Shared with you'),
+                    ),
+                  // labels are the reader's own, viewers' too
+                  if (!trashed)
+                    MenuItemButton(
+                      leadingIcon: const Icon(Icons.label_outline),
+                      onPressed: _labelNote,
+                      child: Text(labels.isEmpty ? 'Add label' : 'Change labels'),
+                    ),
+                  if (owned && _exists)
+                    MenuItemButton(
+                      leadingIcon: Icon(trashed ? Icons.restore_from_trash_outlined : Icons.delete_outline),
+                      onPressed: trash,
+                      child: Text(trashed ? 'Restore' : 'Delete'),
+                    ),
+                  if (owned && trashed)
+                    MenuItemButton(
+                      leadingIcon: const Icon(Icons.delete_forever_outlined),
+                      onPressed: deleteForever,
+                      child: const Text('Delete forever'),
+                    ),
+                ],
+              ),
+              const SizedBox(width: 4),
+            ],
+          ),
+          body: DropTarget(
+            onDragEntered: (_) => setState(() => _dropping = true),
+            enable: editable,
+            onDragExited: (_) => setState(() => _dropping = false),
+            onDragDone: (d) async {
+              setState(() => _dropping = false);
+              final picked = <NewFile>[
+                for (final f in d.files)
+                  (name: f.name, size: await f.length(), path: f.path.isEmpty ? null : f.path, bytes: null),
+              ];
+              await _attach(picked);
+            },
+            child: Stack(
+              children: [
+                ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                  children: [
+                    Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 760),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            // pictures lead the note
+                            if (images.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: NoteImages(images: images),
+                              ),
+                            TextField(
+                              contentInsertionConfiguration: _insertion,
+                              controller: _title,
+                              focusNode: _titleFocus,
+                              readOnly: !editable,
+                              style: text.titleLarge,
+                              decoration: const InputDecoration(hintText: 'Title', border: InputBorder.none),
+                              textInputAction: TextInputAction.next,
+                              textCapitalization: TextCapitalization.sentences,
+                              onChanged: (v) => _later('title', () => _setNote('title', v)),
+                              onSubmitted: (_) => isList
+                                  ? (open.isEmpty ? _addItem(items) : _itemNode(open.first.id).requestFocus())
+                                  : _bodyFocus.requestFocus(),
+                            ),
+                            if (!isList)
+                              TextField(
+                                controller: _body,
+                                focusNode: _bodyFocus,
+                                readOnly: !editable,
+                                style: text.bodyLarge,
+                                decoration: const InputDecoration(hintText: 'Note', border: InputBorder.none),
+                                maxLines: null,
+                                minLines: 6,
+                                keyboardType: TextInputType.multiline,
+                                textCapitalization: TextCapitalization.sentences,
+                                onChanged: (v) => _later('body', () => _setNote('body', v)),
+                                contentInsertionConfiguration: _insertion,
+                              ),
+                            if (isList) ...[
+                              for (final it in open) itemRow(it),
+                              if (editable)
+                                ListTile(
+                                  leading: const Icon(Icons.add),
+                                  title: const Text('List item'),
+                                  contentPadding: const EdgeInsets.only(left: 16),
+                                  onTap: () => _addItem(items),
+                                ),
+                              if (checked.isNotEmpty) ...[
+                                const Divider(),
+                                ListTile(
+                                  contentPadding: const EdgeInsets.only(left: 16),
+                                  leading: AnimatedRotation(
+                                    turns: _showChecked ? 0 : -0.25,
+                                    duration: const Duration(milliseconds: 200),
+                                    child: const Icon(Icons.expand_more),
+                                  ),
+                                  title: Text('${checked.length} checked item${checked.length == 1 ? '' : 's'}'),
+                                  onTap: () => setState(() => _showChecked = !_showChecked),
+                                ),
+                                if (_showChecked)
+                                  for (final it in checked) itemRow(it),
+                              ],
+                            ],
+                            // the reminder and labels, under the text, as input
+                            // chips: tap to change, x to remove
+                            if (reminder != null || labels.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 8),
+                                child: Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    if (reminder != null)
+                                      InputChip(
+                                        avatar: const Icon(Icons.alarm),
+                                        label: Text(reminderLabel(reminder)),
+                                        onPressed: () => showReminderSheet(
+                                          context,
+                                          current: reminder,
+                                          onSet: _remind,
+                                          onClear: () => _remind(null),
+                                        ),
+                                        deleteButtonTooltipMessage: 'Remove reminder',
+                                        onDeleted: () => _remind(null),
+                                      ),
+                                    for (final l in labels)
+                                      InputChip(
+                                        label: Text(l.name),
+                                        onPressed: _labelNote,
+                                        deleteButtonTooltipMessage: 'Remove label',
+                                        onDeleted: () => _edit(
+                                          () => [
+                                            _op(Collections.noteState, _id, 'labels', [
+                                              for (final x in labels)
+                                                if (x.id != l.id) x.id,
+                                            ]),
+                                          ],
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            // other files below the text, each a row
+                            if (others.isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              for (final a in others)
+                                FileRow(
+                                  key: ValueKey(a.id),
+                                  attachment: a,
+                                  onRemove: editable ? () => _removeFile(a) : null,
+                                ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                // a drop lands on the whole note: say so while files hover
+                if (_dropping)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: Container(
+                        margin: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.primaryContainer.withValues(alpha: 0.85),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: theme.colorScheme.primary, width: 2),
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          'Drop to attach',
+                          style: text.titleMedium?.copyWith(color: theme.colorScheme.onPrimaryContainer),
+                        ),
+                      ),
+                    ),
                   ),
               ],
             ),
-            const SizedBox(width: 4),
-          ],
-        ),
-        body: DropTarget(
-          onDragEntered: (_) => setState(() => _dropping = true),
-          enable: editable,
-          onDragExited: (_) => setState(() => _dropping = false),
-          onDragDone: (d) async {
-            setState(() => _dropping = false);
-            final picked = <NewFile>[
-              for (final f in d.files)
-                (name: f.name, size: await f.length(), path: f.path.isEmpty ? null : f.path, bytes: null),
-            ];
-            await _attach(picked);
-          },
-          child: Stack(
-            children: [
-              ListView(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                children: [
-                  Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 760),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          // images first, as Keep shows them
-                          if (images.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: ClipRRect(
-                                // the card's corner, from the theme's shape scale
-                                borderRadius:
-                                    (theme.cardTheme.shape as RoundedRectangleBorder?)?.borderRadius.resolve(
-                                      Directionality.of(context),
-                                    ) ??
-                                    BorderRadius.circular(12),
-                                child: NoteImages(images: images),
-                              ),
-                            ),
-                          TextField(
-                            contentInsertionConfiguration: _insertion,
-                            controller: _title,
-                            focusNode: _titleFocus,
-                            readOnly: !editable,
-                            style: text.titleLarge,
-                            decoration: const InputDecoration(hintText: 'Title', border: InputBorder.none),
-                            textInputAction: TextInputAction.next,
-                            textCapitalization: TextCapitalization.sentences,
-                            onChanged: (v) => _later('title', () => _setNote('title', v)),
-                            onSubmitted: (_) => isList
-                                ? (open.isEmpty ? _addItem(items) : _itemNode(open.first.id).requestFocus())
-                                : _bodyFocus.requestFocus(),
-                          ),
-                          if (!isList)
-                            TextField(
-                              controller: _body,
-                              focusNode: _bodyFocus,
-                              readOnly: !editable,
-                              style: text.bodyLarge,
-                              decoration: const InputDecoration(hintText: 'Note', border: InputBorder.none),
-                              maxLines: null,
-                              minLines: 6,
-                              keyboardType: TextInputType.multiline,
-                              textCapitalization: TextCapitalization.sentences,
-                              onChanged: (v) => _later('body', () => _setNote('body', v)),
-                              contentInsertionConfiguration: _insertion,
-                            ),
-                          if (isList) ...[
-                            for (final it in open) itemRow(it),
-                            if (editable)
-                              ListTile(
-                                leading: const Icon(Icons.add),
-                                title: const Text('List item'),
-                                contentPadding: const EdgeInsets.only(left: 16),
-                                onTap: () => _addItem(items),
-                              ),
-                            if (checked.isNotEmpty) ...[
-                              const Divider(),
-                              ListTile(
-                                contentPadding: const EdgeInsets.only(left: 16),
-                                leading: AnimatedRotation(
-                                  turns: _showChecked ? 0 : -0.25,
-                                  duration: const Duration(milliseconds: 200),
-                                  child: const Icon(Icons.expand_more),
-                                ),
-                                title: Text('${checked.length} checked item${checked.length == 1 ? '' : 's'}'),
-                                onTap: () => setState(() => _showChecked = !_showChecked),
-                              ),
-                              if (_showChecked)
-                                for (final it in checked) itemRow(it),
-                            ],
-                          ],
-                          // the reminder and labels, under the text, as input
-                          // chips: tap to change, x to remove
-                          if (reminder != null || labels.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 8),
-                              child: Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
-                                children: [
-                                  if (reminder != null)
-                                    InputChip(
-                                      avatar: const Icon(Icons.alarm),
-                                      label: Text(reminderLabel(reminder)),
-                                      onPressed: () => showReminderSheet(
-                                        context,
-                                        current: reminder,
-                                        onSet: _remind,
-                                        onClear: () => _remind(null),
-                                      ),
-                                      deleteButtonTooltipMessage: 'Remove reminder',
-                                      onDeleted: () => _remind(null),
-                                    ),
-                                  for (final l in labels)
-                                    InputChip(
-                                      label: Text(l.name),
-                                      onPressed: _labelNote,
-                                      deleteButtonTooltipMessage: 'Remove label',
-                                      onDeleted: () => _edit(
-                                        () => [
-                                          _op(Collections.noteState, _id, 'labels', [
-                                            for (final x in labels)
-                                              if (x.id != l.id) x.id,
-                                          ]),
-                                        ],
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ),
-                          // other files below the text, each a row
-                          if (others.isNotEmpty) ...[
-                            const SizedBox(height: 8),
-                            for (final a in others)
-                              FileRow(
-                                key: ValueKey(a.id),
-                                attachment: a,
-                                onRemove: editable ? () => _removeFile(a) : null,
-                              ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              // a drop lands on the whole note: say so while files hover
-              if (_dropping)
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: Container(
-                      margin: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.primaryContainer.withValues(alpha: 0.85),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: theme.colorScheme.primary, width: 2),
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        'Drop to attach',
-                        style: text.titleMedium?.copyWith(color: theme.colorScheme.onPrimaryContainer),
-                      ),
-                    ),
-                  ),
-                ),
-            ],
           ),
-        ),
-        bottomNavigationBar: _NoteBar(
-          isList: isList,
-          editable: editable,
-          inDialog: widget.inDialog,
-          color: note?.color ?? '',
-          edited: note?.updated ?? '',
-          onToggleList: () => _convert(note, items),
-          onColor: (c) => _setNote('color', c),
-          onAdd: _add,
+          bottomNavigationBar: _NoteBar(
+            isList: isList,
+            editable: editable,
+            inDialog: widget.inDialog,
+            color: note?.color ?? '',
+            edited: note?.updated ?? '',
+            onToggleList: () => _convert(note, items),
+            onColor: (c) => _setNote('color', c),
+            onAdd: _add,
+          ),
         ),
       ),
     );

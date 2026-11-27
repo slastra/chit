@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show PointerDeviceKind;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
@@ -17,7 +18,9 @@ import '../data/local_files.dart' as files;
 import '../data/media.dart';
 import '../state/providers.dart';
 import 'audio_player.dart';
+import 'note_routes.dart';
 import 'create.dart' show newNoteDefaults;
+import 'expressive.dart';
 import 'feedback.dart';
 import 'home_page.dart' show isExpanded;
 
@@ -163,13 +166,13 @@ void openAttachment(BuildContext context, Attachment a) => a.kind == MediaKind.a
     ? unawaited(showAudioPlayer(context, a))
     : unawaited(context.push('/note/${a.note}/file/${a.id}'));
 
-/// A note's images, as Keep shows them: one at its own shape, several as a
-/// grid of squares. Each opens the viewer.
+/// A note's images: one whole, at its own shape; several as Material's
+/// multi-browse carousel. Each opens the viewer.
 class NoteImages extends StatelessWidget {
-  const NoteImages({super.key, required this.images, this.maxHeight = 480, this.columns = 3, this.gap = 4});
+  const NoteImages({super.key, required this.images, this.maxHeight = 480, this.carouselHeight = 240, this.gap = 4});
   final List<Attachment> images;
   final double maxHeight;
-  final int columns;
+  final double carouselHeight;
   final double gap;
 
   @override
@@ -187,26 +190,54 @@ class NoteImages extends StatelessWidget {
         ),
       ),
     );
+    final theme = Theme.of(context);
     if (images.length == 1) {
-      return ConstrainedBox(
-        constraints: BoxConstraints(maxHeight: maxHeight),
-        child: SizedBox(
-          width: double.infinity,
-          child: tile(images.first, thumb: '1080x0', width: double.infinity),
+      // one picture: whole, in the card's corners
+      final card = theme.cardTheme.shape;
+      return ClipRRect(
+        borderRadius: card is RoundedRectangleBorder
+            ? card.borderRadius.resolve(Directionality.of(context))
+            : BorderRadius.circular(12),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: maxHeight),
+          child: SizedBox(
+            width: double.infinity,
+            child: tile(images.first, thumb: '1080x0', width: double.infinity),
+          ),
         ),
       );
     }
-    return LayoutBuilder(
-      builder: (context, c) {
-        // two images split the width; three or more go three to a row
-        final across = images.length < columns ? images.length : columns;
-        final side = (c.maxWidth - gap * (across - 1)) / across;
-        return Wrap(
-          spacing: gap,
-          runSpacing: gap,
-          children: [for (final a in images) tile(a, thumb: '320x320', width: side, height: side)],
-        );
-      },
+    // several: Material's multi-browse carousel, a large picture, a
+    // medium and a small one, each growing as it comes to the front
+    return SizedBox(
+      height: carouselHeight,
+      child: ScrollConfiguration(
+        // a mouse drags it too (a wheel only scrolls the page)
+        behavior: ScrollConfiguration.of(context)
+            .copyWith(dragDevices: {...PointerDeviceKind.values}, scrollbars: false),
+        child: CarouselView.weighted(
+          flexWeights: images.length == 2 ? const [3, 2] : const [3, 2, 1],
+          itemSnapping: true,
+          padding: EdgeInsets.symmetric(horizontal: gap),
+          // the carousel's extra-large corner, from the theme's shape scale
+          shape: theme.dialogTheme.shape ?? RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+          onTap: (i) => openAttachment(context, images[i]),
+          children: [
+            for (final a in images)
+              Semantics(
+                image: true,
+                label: a.name,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    AttachmentImage(a, thumb: '1080x0', width: double.infinity, height: carouselHeight),
+                    Positioned(right: 12, bottom: 12, child: UploadMark(a, onImage: true)),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -458,7 +489,9 @@ class AudioProgress extends ConsumerWidget {
   }
 }
 
-/// Position, a slider, and length, for any player.
+/// Position, a slider, and length, for any player. What has played is a
+/// wavy line that travels while it plays, and settles flat when playback
+/// pauses or the handle is dragged (expressive.dart's [WavyTrackShape]).
 class SeekBar extends StatefulWidget {
   const SeekBar({super.key, required this.player, this.color});
   final mk.Player player;
@@ -468,8 +501,42 @@ class SeekBar extends StatefulWidget {
   State<SeekBar> createState() => _SeekBarState();
 }
 
-class _SeekBarState extends State<SeekBar> {
+class _SeekBarState extends State<SeekBar> with TickerProviderStateMixin {
   double? _dragging;
+
+  // one wavelength a second; the amplitude comes and goes
+  late final _wave = AnimationController(vsync: this, duration: const Duration(seconds: 1));
+  late final _swell = AnimationController(vsync: this, duration: Durations.medium2);
+  StreamSubscription<bool>? _playing;
+
+  @override
+  void initState() {
+    super.initState();
+    _move(widget.player.state.playing);
+    _playing = widget.player.stream.playing.listen(_move);
+  }
+
+  void _move(bool playing) {
+    if (!mounted) return;
+    if (playing && _dragging == null) {
+      unawaited(_wave.repeat());
+      unawaited(_swell.forward());
+    } else {
+      unawaited(
+        _swell.reverse().whenComplete(() {
+          if (mounted && _swell.isDismissed) _wave.stop();
+        }),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    unawaited(_playing?.cancel());
+    _wave.dispose();
+    _swell.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -486,13 +553,30 @@ class _SeekBarState extends State<SeekBar> {
           children: [
             Text(formatDuration(Duration(milliseconds: (at * ms).round())), style: style),
             Expanded(
-              child: Slider(
-                value: at,
-                onChanged: ms == 0 ? null : (v) => setState(() => _dragging = v),
-                onChangeEnd: (v) async {
-                  await p.seek(Duration(milliseconds: (v * ms).round()));
-                  if (mounted) setState(() => _dragging = null);
-                },
+              child: AnimatedBuilder(
+                animation: Listenable.merge([_wave, _swell]),
+                builder: (context, _) => SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    trackHeight: 4,
+                    trackGap: 6,
+                    thumbSize: const WidgetStatePropertyAll(Size(4, 28)),
+                    trackShape: WavyTrackShape(phase: _wave.value, swell: Curves.easeInOut.transform(_swell.value)),
+                  ),
+                  child: Slider(
+                    value: at,
+                    onChangeStart: (_) {
+                      _dragging = at;
+                      _move(false);
+                    },
+                    onChanged: ms == 0 ? null : (v) => setState(() => _dragging = v),
+                    onChangeEnd: (v) async {
+                      await p.seek(Duration(milliseconds: (v * ms).round()));
+                      if (!mounted) return;
+                      setState(() => _dragging = null);
+                      _move(p.state.playing);
+                    },
+                  ),
+                ),
               ),
             ),
             Text(formatDuration(total), style: style),
@@ -586,16 +670,20 @@ class AddButton extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              for (final s in AddSource.offered)
-                ListTile(
-                  leading: Icon(s.icon),
-                  title: Text(s.label),
-                  onTap: () {
-                    Navigator.pop(sheet);
-                    onPick(s);
-                  },
-                ),
-              const SizedBox(height: 8),
+              SegmentedList(
+                children: [
+                  for (final s in AddSource.offered)
+                    ListTile(
+                      leading: Icon(s.icon),
+                      title: Text(s.label),
+                      onTap: () {
+                        Navigator.pop(sheet);
+                        onPick(s);
+                      },
+                    ),
+                ],
+              ),
+              const SizedBox(height: 16),
             ],
           ),
         ),
@@ -631,7 +719,7 @@ Future<void> newNoteWithFiles(BuildContext context, List<NewFile> picked) async 
   ]);
   if (!context.mounted) return;
   await attachTo(context, id, picked);
-  if (context.mounted) await context.push('/note/$id');
+  if (context.mounted) await openNote(context, '/note/$id');
 }
 
 // ---- voice memos ---------------------------------------------------------------

@@ -16,6 +16,7 @@ import 'share_in.dart';
 import 'home_page.dart';
 import 'login_page.dart';
 import 'note_page.dart';
+import 'note_routes.dart';
 import 'theme.dart';
 import 'theme_file.dart';
 import 'system_colors.dart';
@@ -60,6 +61,7 @@ final _router = Provider<GoRouter>((ref) {
         pageBuilder: (context, state) => _notePage(
           context,
           state,
+          NoteOrigins.fresh,
           (dialog) => NotePage(
             list: state.uri.queryParameters['list'] == '1',
             initialTitle: state.uri.queryParameters['title'] ?? '',
@@ -70,41 +72,24 @@ final _router = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/note/:id',
-        pageBuilder: (context, state) =>
-            _notePage(context, state, (dialog) => NotePage(noteId: state.pathParameters['id'], inDialog: dialog)),
+        pageBuilder: (context, state) => _notePage(
+          context,
+          state,
+          state.pathParameters['id']!,
+          (dialog) => NotePage(noteId: state.pathParameters['id'], inDialog: dialog),
+        ),
       ),
     ],
   );
 });
 
-/// A note opens full-screen on compact and medium windows, and as a dialog
-/// over the board on expanded ones: Material's adaptive pattern for a detail
-/// view, which keeps the notes in view behind it.
-Page<void> _notePage(BuildContext context, GoRouterState state, Widget Function(bool dialog) page) =>
+/// A note opens as the whole window on compact and medium ones, grown out
+/// of its card, and in the detail pane beside the board on expanded ones
+/// (note_routes.dart).
+Page<void> _notePage(BuildContext context, GoRouterState state, String origin, Widget Function(bool pane) page) =>
     isExpanded(context)
-    ? _DialogPage(key: state.pageKey, child: page(true))
-    : MaterialPage(key: state.pageKey, child: page(false));
-
-class _DialogPage extends Page<void> {
-  const _DialogPage({super.key, required this.child});
-  final Widget child;
-
-  @override
-  Route<void> createRoute(BuildContext context) => DialogRoute<void>(
-    context: context,
-    settings: this,
-    builder: (context) {
-      final size = MediaQuery.sizeOf(context);
-      // the editor as a basic dialog: Material's large-screen form of a
-      // full-screen dialog, at most 560dp wide, in its theme shape and color
-      return Dialog(
-        clipBehavior: Clip.antiAlias,
-        insetPadding: const EdgeInsets.all(32),
-        child: SizedBox(width: 560, height: (size.height - 96).clamp(320, 820), child: child),
-      );
-    },
-  );
-}
+    ? NotePanePage(key: state.pageKey, child: page(true))
+    : NoteOpenPage(key: state.pageKey, origin: origin, child: page(false));
 
 /// Android's own color scheme, read again whenever the app comes back to
 /// the foreground (the wallpaper, and so the scheme, may have changed).
@@ -120,10 +105,16 @@ class ChitApp extends ConsumerStatefulWidget {
 class _ChitAppState extends ConsumerState<ChitApp> {
   late final AppLifecycleListener _lifecycle;
   late final _inbox = ShareInbox(_received);
-  late final _notifications = PhoneNotifications(ref, open: (note) => ref.read(_router).push('/note/$note'));
+  late final _notifications = PhoneNotifications(ref, open: (note) => _open('/note/$note'));
 
   /// Shares that came in before there was anyone signed in to keep them.
   final _held = <Shared>[];
+
+  /// Opens a note from outside the pages (a notification).
+  void _open(String location) {
+    final context = _rootNavigator.currentContext;
+    if (context != null) unawaited(openNote(context, location));
+  }
 
   @override
   void initState() {

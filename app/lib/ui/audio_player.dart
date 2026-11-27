@@ -2,13 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../core/protocol.dart';
 import '../data/replica.dart';
 import '../state/providers.dart';
 import 'attachments.dart';
+import 'note_routes.dart';
 import 'media_player.dart';
 import 'expressive.dart';
 
@@ -272,7 +272,7 @@ class _FullPlayer extends ConsumerWidget {
                         TextButton(
                           onPressed: () {
                             Navigator.pop(context);
-                            unawaited(context.push('/note/${note.id}'));
+                            unawaited(openNote(context, '/note/${note.id}'));
                           },
                           child: Text(note.label, maxLines: 1, overflow: TextOverflow.ellipsis),
                         ),

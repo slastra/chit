@@ -92,74 +92,82 @@ class _ShareSheetState extends ConsumerState<_ShareSheet> {
           child: ListView(
             shrinkWrap: true,
             children: [
-              ListTile(
-                leading: PersonAvatar(id: note.owner),
-                title: Text('${nameOf(people, note.owner)}${you(note.owner)}'),
-                subtitle: const Text('Owner'),
-              ),
-              for (final m in members)
-                ListTile(
-                  leading: PersonAvatar(id: m.user),
-                  title: Text('${nameOf(people, m.user)}${you(m.user)}'),
-                  subtitle: owner ? null : Text(m.role == 'viewer' ? 'Can view' : 'Can edit'),
-                  trailing: !owner
-                      ? null
-                      : busyOr(
-                          m.user,
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              // the role: a text button with a menu, light in a list row
-                              MenuAnchor(
-                                builder: (context, menu, _) => TextButton.icon(
-                                  onPressed: () => menu.isOpen ? menu.close() : menu.open(),
-                                  icon: const Icon(Icons.arrow_drop_down),
-                                  iconAlignment: IconAlignment.end,
-                                  label: Text(m.role == 'viewer' ? 'Can view' : 'Can edit'),
-                                ),
-                                menuChildren: [
-                                  for (final (r, label) in const [('editor', 'Can edit'), ('viewer', 'Can view')])
-                                    MenuItemButton(
-                                      leadingIcon: Icon(m.role == r ? Icons.check : null),
-                                      onPressed: m.role == r
-                                          ? null
-                                          : () =>
-                                                unawaited(_call(m.user, (api) => api.share(note.id, m.user, role: r))),
-                                      child: Text(label),
+              SegmentedList(
+                children: [
+                  ListTile(
+                    leading: PersonAvatar(id: note.owner),
+                    title: Text('${nameOf(people, note.owner)}${you(note.owner)}'),
+                    subtitle: const Text('Owner'),
+                  ),
+                  for (final m in members)
+                    ListTile(
+                      leading: PersonAvatar(id: m.user),
+                      title: Text('${nameOf(people, m.user)}${you(m.user)}'),
+                      subtitle: owner ? null : Text(m.role == 'viewer' ? 'Can view' : 'Can edit'),
+                      trailing: !owner
+                          ? null
+                          : busyOr(
+                              m.user,
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  // the role: a text button with a menu, light in a list row
+                                  MenuAnchor(
+                                    builder: (context, menu, _) => TextButton.icon(
+                                      onPressed: () => menu.isOpen ? menu.close() : menu.open(),
+                                      icon: const Icon(Icons.arrow_drop_down),
+                                      iconAlignment: IconAlignment.end,
+                                      label: Text(m.role == 'viewer' ? 'Can view' : 'Can edit'),
                                     ),
+                                    menuChildren: [
+                                      for (final (r, label) in const [('editor', 'Can edit'), ('viewer', 'Can view')])
+                                        MenuItemButton(
+                                          leadingIcon: Icon(m.role == r ? Icons.check : null),
+                                          onPressed: m.role == r
+                                              ? null
+                                              : () => unawaited(
+                                                  _call(m.user, (api) => api.share(note.id, m.user, role: r)),
+                                                ),
+                                          child: Text(label),
+                                        ),
+                                    ],
+                                  ),
+                                  IconButton(
+                                    tooltip: 'Remove ${nameOf(people, m.user)}',
+                                    icon: const Icon(Icons.close),
+                                    onPressed: () => _call(m.user, (api) => api.unshare(note.id, m.user)),
+                                  ),
                                 ],
                               ),
-                              IconButton(
-                                tooltip: 'Remove ${nameOf(people, m.user)}',
-                                icon: const Icon(Icons.close),
-                                onPressed: () => _call(m.user, (api) => api.unshare(note.id, m.user)),
-                              ),
-                            ],
-                          ),
-                        ),
-                ),
+                            ),
+                    ),
+                ],
+              ),
               if (owner && others.isNotEmpty) ...[
-                const Divider(indent: 16, endIndent: 16),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 4),
+                  padding: const EdgeInsets.fromLTRB(32, 16, 32, 8),
                   child: Text(
                     'Add people',
                     style: theme.textTheme.titleSmall?.copyWith(color: scheme.onSurfaceVariant),
                   ),
                 ),
-                for (final p in others)
-                  ListTile(
-                    leading: PersonAvatar(id: p.id),
-                    title: Text(p.display),
-                    subtitle: p.name.isEmpty ? null : Text(p.email),
-                    trailing: busyOr(
-                      p.id,
-                      FilledButton.tonal(
-                        onPressed: () => _call(p.id, (api) => api.share(note.id, p.id)),
-                        child: const Text('Add'),
+                SegmentedList(
+                  children: [
+                    for (final p in others)
+                      ListTile(
+                        leading: PersonAvatar(id: p.id),
+                        title: Text(p.display),
+                        subtitle: p.name.isEmpty ? null : Text(p.email),
+                        trailing: busyOr(
+                          p.id,
+                          FilledButton.tonal(
+                            onPressed: () => _call(p.id, (api) => api.share(note.id, p.id)),
+                            child: const Text('Add'),
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
+                  ],
+                ),
               ],
             ],
           ),

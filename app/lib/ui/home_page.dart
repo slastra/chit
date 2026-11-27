@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../core/board_order.dart';
@@ -12,7 +13,6 @@ import '../core/roles.dart';
 import '../data/media.dart';
 import '../data/replica.dart';
 import '../data/sync.dart';
-import '../notifications.dart';
 import '../state/providers.dart';
 import 'attachments.dart';
 import 'board_drag.dart';
@@ -24,9 +24,22 @@ import 'feedback.dart';
 import 'labels_ui.dart';
 import 'note_colors.dart';
 import 'reminder_picker.dart';
+import 'settings.dart';
 import 'masonry.dart';
 import 'nav_rail.dart';
+import 'note_routes.dart';
 import 'note_card.dart';
+
+/// What the chips under the search bar narrow a shelf to (labels are
+/// chips there too; those pick the label's own shelf).
+enum NoteFilter {
+  lists('Lists'),
+  images('Images'),
+  shared('Shared');
+
+  const NoteFilter(this.label);
+  final String label;
+}
 
 enum Shelf {
   notes('Notes', Icons.lightbulb_outline, Icons.lightbulb),
@@ -79,6 +92,10 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   void _clearSelection() => setState(_selected.clear);
   String _query = '';
+  final _filters = <NoteFilter>{};
+
+  /// Whether the shelf is narrowed, by words or by chips.
+  bool get _narrowed => _query.trim().isNotEmpty || _filters.isNotEmpty;
   final _scaffold = GlobalKey<ScaffoldState>();
 
   /// Whether the modal rail is up. Android only asks the app about Back when
@@ -99,6 +116,26 @@ class _HomePageState extends ConsumerState<HomePage> {
     _lifecycle = AppLifecycleListener(onHide: _drag.cancel, onPause: _drag.cancel);
   }
 
+  /// The note open above the board: on expanded windows it is in the detail
+  /// pane, which the board leaves room for.
+  String? _openNote;
+  GoRouter? _router;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final router = GoRouter.of(context);
+    if (router == _router) return;
+    _router?.routerDelegate.removeListener(_routeChanged);
+    _router = router..routerDelegate.addListener(_routeChanged);
+    _openNote = openNoteId(router);
+  }
+
+  void _routeChanged() {
+    final id = openNoteId(_router!);
+    if (id != _openNote && mounted) setState(() => _openNote = id);
+  }
+
   /// After a drop, the order the board shows until the library has it (or
   /// a second passes), so nothing jumps back while the edit lands.
   ({List<String> pinned, List<String> others})? _held;
@@ -107,6 +144,7 @@ class _HomePageState extends ConsumerState<HomePage> {
   @override
   void dispose() {
     _heldTimer?.cancel();
+    _router?.routerDelegate.removeListener(_routeChanged);
     _selectionFocus.dispose();
     _lifecycle.dispose();
     _drag.dispose();
@@ -192,6 +230,15 @@ class _HomePageState extends ConsumerState<HomePage> {
         lib.labelsOf(n.id).any((l) => l.name.toLowerCase().contains(q)) ||
         n.body.toLowerCase().contains(q) ||
         (lib.items[n.id] ?? const []).any((i) => i.text.toLowerCase().contains(q));
+    final me = ref.read(sessionProvider).value?.user.id ?? '';
+    // every chip that is on has to hold
+    bool passes(Note n) => _filters.every(
+      (f) => switch (f) {
+        NoteFilter.lists => n.isList,
+        NoteFilter.images => (lib.attachments[n.id] ?? const <Attachment>[]).any((a) => a.isImage),
+        NoteFilter.shared => n.owner != me || (lib.members[n.id]?.isNotEmpty ?? false),
+      },
+    );
     bool onShelf(Note n) {
       final st = lib.stateOf(n.id);
       return switch (_shelf) {
@@ -206,7 +253,7 @@ class _HomePageState extends ConsumerState<HomePage> {
 
     // The Notes shelf in board order (where you put them; new notes on
     // top). Archive and trash newest made first. Editing never moves a note.
-    final list = lib.notes.where((n) => onShelf(n) && hit(n)).toList();
+    final list = lib.notes.where((n) => onShelf(n) && hit(n) && passes(n)).toList();
     if (_shelf == Shelf.notes || _shelf == Shelf.labeled) {
       list.sort((a, b) => boardCompare(a, b, lib.stateOf(a.id), lib.stateOf(b.id)));
     } else if (_shelf == Shelf.reminders) {
@@ -263,7 +310,7 @@ class _HomePageState extends ConsumerState<HomePage> {
     final lib = ref.watch(libraryProvider).value ?? Library.empty;
     final status = ref.watch(syncStatusProvider).value;
     final shown = _shown(lib);
-    final searching = _query.trim().isNotEmpty;
+    final searching = _narrowed;
     final canDrag = _shelf == Shelf.notes && !searching;
     final split = _split(lib, shown);
     final base = (pinned: split.pinned, others: split.others);
@@ -322,8 +369,13 @@ class _HomePageState extends ConsumerState<HomePage> {
     // Material's window size classes: compact below 600dp (navigation
     // behind the menu button), medium to 840 (the collapsed rail), expanded
     // from there (the expanded rail, which its menu button collapses)
-    final compact = MediaQuery.sizeOf(context).width < 600;
-    final expandedRail = wide && !_railCollapsed;
+    final width = MediaQuery.sizeOf(context).width;
+    final compact = width < 600;
+    // the detail pane's room at the window's end, while a note is open
+    final detail = wide && _openNote != null ? detailPaneWidth(width) + paneSpacer : 0.0;
+    // the rail gives way to the pane where the board would be squeezed
+    // (to under two columns)
+    final expandedRail = wide && !_railCollapsed && width - NavRail.expandedWidth - detail >= 560;
     // margins: 16dp on compact windows, 24dp from medium up
     final margin = compact ? 16.0 : 24.0;
     // the expanded rail holds the new-note button; otherwise it floats
@@ -336,7 +388,7 @@ class _HomePageState extends ConsumerState<HomePage> {
     snackbarClearance.value = _selected.isNotEmpty ? 64 + 16 : (showFab ? 56 + 16 : 0);
     // the pane beside the rail: what the selection toolbar centers in
     final railWidth = compact ? 0.0 : (expandedRail ? NavRail.expandedWidth : NavRail.collapsedWidth);
-    final paneWidth = MediaQuery.sizeOf(context).width - railWidth;
+    final paneWidth = width - railWidth - detail;
 
     // Material 3 section headers: title-small, sentence case
     Widget section(String label, String tag) => MasonryChild(
@@ -362,6 +414,7 @@ class _HomePageState extends ConsumerState<HomePage> {
             library: lib,
             onMove: canDrag ? (by) => _moveBy(n.id, by: by) : null,
             onMoveTop: canDrag ? () => _moveBy(n.id, top: true) : null,
+            open: wide && _openNote == n.id,
             selected: selected.contains(n.id),
             selecting: selected.isNotEmpty,
             onSelect: () => _toggle(n.id),
@@ -446,6 +499,22 @@ class _HomePageState extends ConsumerState<HomePage> {
               onChanged: (v) => setState(() => _query = v),
             ),
           ),
+          // filter chips ride with the search bar: kinds of note, then the
+          // labels, one tap each (none in the trash)
+          bottom: _shelf == Shelf.trash
+              ? null
+              : PreferredSize(
+                  preferredSize: const Size.fromHeight(48),
+                  child: _FilterChips(
+                    margin: margin,
+                    filters: _filters,
+                    onFilter: (f, on) => setState(() => on ? _filters.add(f) : _filters.remove(f)),
+                    // labels are shelves of their own, reached from Notes
+                    labels: _shelf == Shelf.notes || _shelf == Shelf.labeled ? lib.labels : const [],
+                    label: _shelf == Shelf.labeled ? _label : null,
+                    onLabel: (id, on) => on ? _pick(Shelf.labeled, id) : _pick(Shelf.notes),
+                  ),
+                ),
         ),
         SliverPadding(
           // the grid insets its own columns by the check's overhang
@@ -464,7 +533,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                                 padding: EdgeInsets.only(top: 120),
                                 child: Center(child: LoadingIndicator(contained: true)),
                               )
-                            : _Empty(shelf: _shelf, searching: _query.trim().isNotEmpty),
+                            : _Empty(shelf: _shelf, searching: _narrowed),
                       )
                     : grid,
               ),
@@ -512,9 +581,11 @@ class _HomePageState extends ConsumerState<HomePage> {
                   ];
                   if (context.mounted) await newNoteWithFiles(context, picked);
                 },
-                child: RefreshIndicator(onRefresh: _refresh, child: content),
+                child: PullToRefresh(onRefresh: _refresh, child: content),
               ),
             ),
+            // the detail pane's room (the pane itself is the note's route)
+            AnimatedContainer(duration: Durations.medium4, curve: Easing.emphasizedDecelerate, width: detail),
           ],
         ),
       ),
@@ -529,7 +600,9 @@ class _HomePageState extends ConsumerState<HomePage> {
               child: _selectionBar(lib, selected.toList(), shown, paneWidth - 32),
             )
           : (showFab ? const NewNoteFabMenu() : null),
-      floatingActionButtonLocation: selected.isNotEmpty ? _PaneCenterFloat(railWidth) : null,
+      floatingActionButtonLocation: selected.isNotEmpty
+          ? _BoardFloat(start: railWidth, end: detail, centered: true)
+          : (detail > 0 ? _BoardFloat(start: 0, end: detail, centered: false) : null),
     );
     // Back closes the modal rail, then clears the selection; while
     // selecting, Escape clears it too and Ctrl+A takes every note shown
@@ -755,28 +828,90 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 }
 
+/// The row of filter chips under the search bar, in its width: Material's
+/// filter chips (32dp, 8dp apart), scrolling sideways when they run out of
+/// room.
+class _FilterChips extends StatelessWidget {
+  const _FilterChips({
+    required this.margin,
+    required this.filters,
+    required this.onFilter,
+    required this.labels,
+    required this.label,
+    required this.onLabel,
+  });
+  final double margin;
+  final Set<NoteFilter> filters;
+  final void Function(NoteFilter filter, bool on) onFilter;
+  final List<Label> labels;
+  final String? label;
+  final void Function(String id, bool on) onLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final chips = <Widget>[
+      for (final f in NoteFilter.values)
+        FilterChip(label: Text(f.label), selected: filters.contains(f), onSelected: (on) => onFilter(f, on)),
+      for (final l in labels)
+        FilterChip(
+          avatar: label == l.id ? null : const Icon(Icons.label_outline),
+          label: Text(l.name),
+          selected: label == l.id,
+          onSelected: (on) => onLabel(l.id, on),
+        ),
+    ];
+    return SizedBox(
+      height: 48,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: 720 + margin * 2),
+          child: ScrollConfiguration(
+            behavior: anyPointerScroll(context),
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: EdgeInsets.fromLTRB(margin, 0, margin, 8),
+              itemCount: chips.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              itemBuilder: (_, i) => Center(child: chips[i]),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// How far the selection check hangs off a card's corner, into the grid's
 /// gap: room the grid gives each card's box so the check is under the
 /// pointer there.
 const _checkOverhang = 10.0;
 
-/// The FAB slot's place for the selection toolbar: afloat at the foot,
-/// centered in the pane beside a rail [start] wide.
-class _PaneCenterFloat extends StandardFabLocation with FabCenterOffsetX, FabFloatOffsetY {
-  const _PaneCenterFloat(this.start);
+/// The FAB slot's place over the board, which has a rail [start] wide
+/// before it and the detail pane's [end] after it: afloat at the foot,
+/// [centered] in the board (the selection toolbar) or at its end (the FAB).
+class _BoardFloat extends StandardFabLocation with FabFloatOffsetY {
+  const _BoardFloat({required this.start, required this.end, required this.centered});
   final double start;
+  final double end;
+  final bool centered;
 
   @override
-  double getOffsetX(ScaffoldPrelayoutGeometry scaffoldGeometry, double adjustment) {
-    final x = super.getOffsetX(scaffoldGeometry, adjustment);
-    return scaffoldGeometry.textDirection == TextDirection.rtl ? x - start / 2 : x + start / 2;
+  double getOffsetX(ScaffoldPrelayoutGeometry g, double adjustment) {
+    final rtl = g.textDirection == TextDirection.rtl;
+    final left = rtl ? end : start, right = rtl ? start : end;
+    final fab = g.floatingActionButtonSize.width;
+    if (centered) return left + (g.scaffoldSize.width - left - right - fab) / 2;
+    return rtl
+        ? left + kFloatingActionButtonMargin + g.minInsets.left
+        : g.scaffoldSize.width - right - kFloatingActionButtonMargin - g.minInsets.right - fab;
   }
 
   @override
-  bool operator ==(Object other) => other is _PaneCenterFloat && other.start == start;
+  bool operator ==(Object other) =>
+      other is _BoardFloat && other.start == start && other.end == end && other.centered == centered;
 
   @override
-  int get hashCode => start.hashCode;
+  int get hashCode => Object.hash(start, end, centered);
 }
 
 /// The account: an avatar in the search bar, with the account and sign-out
@@ -823,67 +958,18 @@ class _Account extends ConsumerWidget {
             ],
           ),
         ),
-        if (notificationsSupported) ...[const Divider(height: 1), const _NotifyToggle(), const _BackgroundSync()],
         const Divider(height: 1),
+        MenuItemButton(
+          leadingIcon: const Icon(Icons.settings_outlined),
+          onPressed: () => showSettings(context),
+          child: const Text('Settings'),
+        ),
         MenuItemButton(
           leadingIcon: const Icon(Icons.logout),
           onPressed: () => ref.read(sessionProvider.notifier).signOut(),
           child: const Text('Sign out'),
         ),
       ],
-    );
-  }
-}
-
-/// Whether this phone tells of other people's edits to shared notes.
-final _notifyActivityProvider = FutureProvider<bool>((ref) => activityEnabled(ref.watch(replicaProvider)));
-
-class _NotifyToggle extends ConsumerWidget {
-  const _NotifyToggle();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final on = ref.watch(_notifyActivityProvider).value ?? true;
-    return CheckboxMenuButton(
-      value: on,
-      closeOnActivate: false,
-      onChanged: (v) async {
-        await setActivityEnabled(ref.read(replicaProvider), v ?? false);
-        if (v ?? false) await askNotificationPermission();
-        ref.invalidate(_notifyActivityProvider);
-      },
-      child: const Text('Notify me about shared edits'),
-    );
-  }
-}
-
-const _power = MethodChannel('chit/power');
-
-/// Whether Android leaves the background catch-up alone (no battery
-/// optimization); null where it doesn't apply.
-final _exemptProvider = FutureProvider<bool?>((ref) async {
-  try {
-    return await _power.invokeMethod<bool>('exempt');
-  } on MissingPluginException {
-    return null;
-  }
-});
-
-/// Offers to exempt chit from battery optimization, which otherwise
-/// stretches the 15-minute catch-up to hours. Gone once granted.
-class _BackgroundSync extends ConsumerWidget {
-  const _BackgroundSync();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    if (ref.watch(_exemptProvider).value != false) return const SizedBox.shrink();
-    return MenuItemButton(
-      leadingIcon: const Icon(Icons.battery_saver_outlined),
-      onPressed: () async {
-        await _power.invokeMethod<void>('ask');
-        ref.invalidate(_exemptProvider);
-      },
-      child: const Text('Sync in the background'),
     );
   }
 }

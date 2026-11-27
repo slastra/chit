@@ -6,8 +6,14 @@
 library;
 
 import 'dart:math' as math;
+import 'dart:ui' show PointerDeviceKind;
 
 import 'package:material_ui/material_ui.dart';
+
+/// Sideways scrolling a mouse can drag, without a scrollbar: for rows and
+/// carousels, which a wheel alone cannot reach along.
+ScrollBehavior anyPointerScroll(BuildContext context) =>
+    ScrollConfiguration.of(context).copyWith(dragDevices: {...PointerDeviceKind.values}, scrollbars: false);
 
 // ---- loading indicator -------------------------------------------------------
 
@@ -352,6 +358,202 @@ class FloatingToolbar extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ---- wavy seek track -----------------------------------------------------------
+
+/// A slider track for playback: what has played is the wavy line of
+/// Material's wavy progress indicator (3dp amplitude, 40dp wavelength, 4dp
+/// thick), what is left a flat one with the stop dot at its end, a gap
+/// either side of the handle. [phase] (0 to 1) moves the wave along;
+/// [swell] (0 to 1) is how much of its amplitude it has, so it can settle
+/// flat when playback pauses or the handle is dragged.
+class WavyTrackShape extends SliderTrackShape with BaseSliderTrackShape {
+  const WavyTrackShape({required this.phase, required this.swell});
+  final double phase;
+  final double swell;
+
+  static const _amplitude = 3.0;
+  static const _wavelength = 40.0;
+
+  @override
+  void paint(
+    PaintingContext context,
+    Offset offset, {
+    required RenderBox parentBox,
+    required SliderThemeData sliderTheme,
+    required Animation<double> enableAnimation,
+    required TextDirection textDirection,
+    required Offset thumbCenter,
+    Offset? secondaryOffset,
+    bool isDiscrete = false,
+    bool isEnabled = false,
+  }) {
+    final rect = getPreferredRect(
+      parentBox: parentBox,
+      offset: offset,
+      sliderTheme: sliderTheme,
+      isEnabled: isEnabled,
+      isDiscrete: isDiscrete,
+    );
+    if (rect.height <= 0) return;
+    final active = ColorTween(
+      begin: sliderTheme.disabledActiveTrackColor,
+      end: sliderTheme.activeTrackColor,
+    ).evaluate(enableAnimation)!;
+    final inactive = ColorTween(
+      begin: sliderTheme.disabledInactiveTrackColor,
+      end: sliderTheme.inactiveTrackColor,
+    ).evaluate(enableAnimation)!;
+    final canvas = context.canvas;
+    final r = rect.height / 2;
+    final mid = rect.center.dy;
+    final gap = sliderTheme.trackGap ?? 6;
+    final stroke = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = rect.height
+      ..strokeCap = StrokeCap.round;
+    canvas.save();
+    if (textDirection == TextDirection.rtl) {
+      // drawn left to right, mirrored about the track
+      canvas
+        ..translate(rect.left + rect.right, 0)
+        ..scale(-1, 1);
+    }
+    final thumb = textDirection == TextDirection.rtl ? rect.left + rect.right - thumbCenter.dx : thumbCenter.dx;
+    // played: the wave, easing to the center line at either end
+    final from = rect.left + r, to = thumb - gap - r;
+    if (to > from) {
+      final amp = _amplitude * swell;
+      double y(double x) {
+        final ends = math.min(1.0, math.min(x - from, to - x) / 12);
+        return mid + amp * ends * math.sin((x / _wavelength - phase) * 2 * math.pi);
+      }
+
+      final path = Path()..moveTo(from, y(from));
+      for (var x = from + 1; x < to; x += 1) {
+        path.lineTo(x, y(x));
+      }
+      path.lineTo(to, y(to));
+      canvas.drawPath(path, stroke..color = active);
+    }
+    // to come: the flat line, and the stop dot at its end
+    final rest = thumb + gap + r, end = rect.right - r;
+    if (end > rest) canvas.drawLine(Offset(rest, mid), Offset(end, mid), stroke..color = inactive);
+    canvas
+      ..drawCircle(Offset(end, mid), r, Paint()..color = active)
+      ..restore();
+  }
+}
+
+// ---- pull to refresh -----------------------------------------------------------
+
+/// Pull to refresh, Expressive's way: the contained loading indicator comes
+/// down from the top as the list is pulled, and turns while [onRefresh]
+/// runs (it replaces the circular spinner).
+class PullToRefresh extends StatefulWidget {
+  const PullToRefresh({super.key, required this.onRefresh, required this.child});
+  final RefreshCallback onRefresh;
+  final Widget child;
+
+  @override
+  State<PullToRefresh> createState() => _PullToRefreshState();
+}
+
+class _PullToRefreshState extends State<PullToRefresh> {
+  RefreshIndicatorStatus? _status;
+
+  @override
+  Widget build(BuildContext context) {
+    // pulled: on its way; far enough, or refreshing: all the way out
+    final out = switch (_status) {
+      RefreshIndicatorStatus.drag => 0.6,
+      RefreshIndicatorStatus.armed || RefreshIndicatorStatus.snap || RefreshIndicatorStatus.refresh => 1.0,
+      _ => 0.0,
+    };
+    return Stack(
+      children: [
+        RefreshIndicator.noSpinner(
+          onRefresh: widget.onRefresh,
+          onStatusChange: (s) => setState(() => _status = s),
+          child: widget.child,
+        ),
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: IgnorePointer(
+            child: SafeArea(
+              child: Center(
+                child: AnimatedSlide(
+                  offset: Offset(0, out == 0 ? -1.2 : (out < 1 ? 0.1 : 0.6)),
+                  duration: Durations.medium2,
+                  curve: Easing.emphasizedDecelerate,
+                  child: AnimatedOpacity(
+                    opacity: out == 0 ? 0 : (out < 1 ? 0.7 : 1),
+                    duration: Durations.short4,
+                    child: AnimatedScale(
+                      scale: out == 0 ? 0.4 : (out < 1 ? 0.8 : 1),
+                      duration: Durations.medium2,
+                      curve: Easing.emphasizedDecelerate,
+                      child: out == 0
+                          ? const SizedBox.square(dimension: 48)
+                          : const Material(
+                              type: MaterialType.circle,
+                              color: Colors.transparent,
+                              elevation: 3,
+                              child: LoadingIndicator(contained: true),
+                            ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ---- segmented list ------------------------------------------------------------
+
+/// Expressive's segmented list: the rows of a group as separate containers
+/// 2dp apart, the group's outer corners large (16dp) and the corners
+/// between rows extra small (4dp), on a brighter surface than what they
+/// sit on. Each child is a row (a ListTile and its kin).
+class SegmentedList extends StatelessWidget {
+  const SegmentedList({super.key, required this.children, this.padding = const EdgeInsets.symmetric(horizontal: 16)});
+  final List<Widget> children;
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    const outer = Radius.circular(16), inner = Radius.circular(4);
+    return Padding(
+      padding: padding,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: 2,
+        children: [
+          for (final (i, child) in children.indexed)
+            Material(
+              color: scheme.surfaceBright,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.vertical(
+                  top: i == 0 ? outer : inner,
+                  bottom: i == children.length - 1 ? outer : inner,
+                ),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: child,
+            ),
+        ],
       ),
     );
   }
