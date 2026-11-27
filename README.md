@@ -1,15 +1,16 @@
 # chit
 
-Self-hosted notes and shared checklists for the desktop, phone, and watch.
+Self-hosted notes and shared checklists for the desktop, phone, and web.
 
-chit is a Keep-style notes app for a household. A single Go server holds the accounts and
-the sync log. Every device keeps its own copy and works offline, then catches up over a
-server-sent event stream. The desktop side is a small daemon built for
-[lastshell](https://github.com/slastra/lastshell), and the Android and Wear OS apps live in
-a separate repo.
+chit is a notes app for a household. A single Go server holds the accounts and the sync
+log. Every device keeps its own copy and works offline, then catches up over a server-sent
+event stream. The app is Flutter, built for Linux, Android and the web (the server serves
+the web build at its root). The terminal has the `chit` CLI and `chitd`, a small daemon
+built for [lastshell](https://github.com/slastra/lastshell).
 
-**Status:** early. The server and the `chit` CLI work end to end: notes, lists, sharing,
-attachments, a live change feed, and `chitd`, the desktop daemon. The apps are next.
+**Status:** in daily use. The server, the CLI, `chitd`, and the app on Linux, Android and
+the web work end to end: notes, lists, labels, reminders, sharing, attachments and a live
+change feed. A Wear OS app is not built.
 
 ## Features
 
@@ -18,6 +19,8 @@ attachments, a live change feed, and `chitd`, the desktop daemon. The apps are n
 - Sharing per note with other accounts on the server, as editor or viewer
 - Offline-first: every device keeps a replica and merges by field
 - Reminders scheduled on each device, with no push service in the middle
+- Material 3 Expressive throughout: the board, a detail pane on wide windows, a media
+  player, and the desktop's own colors when a theme file says so
 - Invite-only accounts, managed from PocketBase's admin UI
 
 ## Install
@@ -67,6 +70,20 @@ chit watch                               # live changes, Ctrl-C to stop
 Notes, items and people are found by name: an exact match first, then a prefix, then a
 substring. When several match, chit lists them with their ids. Every command takes
 `--json`. Piped input works too: `printf 'socks\nshirts\n' | chit add packing`.
+
+### The app
+
+The Flutter app lives in `app/`. Sign in with the server's address and an account.
+
+```sh
+cd app
+flutter run -d linux                     # or an Android device, or chrome
+app/tool/install-linux.sh                # build and install for this user (from the repo root)
+flutter build apk --release --target-platform android-arm64
+```
+
+On Android it also shows reminders as alarms (with Done and Snooze), takes text, links and
+files shared to it, and checks for other people's edits every 15 minutes while closed.
 
 ### chitd
 
@@ -131,8 +148,9 @@ go run ./cmd/chit-server serve
 
 ## Deploying
 
-The `Dockerfile` builds a static binary and stores data in the `/pb_data` volume. Mount a
-persistent volume there and expose port 8090 behind your proxy.
+The `Dockerfile` builds a static binary and the web app (served from `/srv/web`, or
+`CHIT_WEB`), and stores data in the `/pb_data` volume. Mount a persistent volume there and
+expose port 8090 behind your proxy.
 
 ## License
 

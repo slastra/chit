@@ -1,7 +1,7 @@
 # chit design
 
-This is the contract between the server, `chitd`, and the Android and Wear apps. Change it
-here first, then in code.
+This is the contract between the server, `chitd`, and the app. Change it here first, then
+in code.
 
 ## Pieces
 
@@ -10,7 +10,7 @@ here first, then in code.
 | `chit-server` | PocketBase embedded as a library, plus the sync routes below |
 | `chitd` | Desk daemon: SQLite replica, unix socket, SSE client, reminder timers |
 | `chit` | CLI that talks to `chitd` |
-| `chit-android` | Phone and Wear apps sharing one Kotlin sync module |
+| `app/` | The Flutter app (Linux, Android, web): its own SQLite replica and sync engine, a port of `chitd`'s |
 
 PocketBase owns accounts, the admin UI, file storage and backups. Clients do **not** use
 PocketBase's record CRUD or its realtime API for notes. PocketBase realtime has no replay,
@@ -97,6 +97,16 @@ gets a result, in request order:
 `error` means the op will never apply (bad field, bad value, no permission, an HLC more than
 10 minutes ahead of the server); the client drops it rather than retrying.
 
+A client already applied the op to its own replica, so a refused one must be undone
+there: it reloads the snapshot. It ends its stream first and opens a new one from the
+snapshot's `seq`. A snapshot loaded under an open stream loses any change the stream
+delivered after the snapshot was taken, because the stream has already moved past it.
+
+- Within a batch, `notes` and `labels` records are applied before the rest, so a batch
+  may name a new note's items or state ahead of the note.
+- Date fields (`trashed`, `reminder`) take RFC 3339 in UTC, or `""` to clear. Anything
+  else is an `error`.
+
 ### `GET /snapshot`
 
 Everything the caller can see as of `seq`: notes, items, members, the caller's state rows
@@ -177,13 +187,13 @@ carries its own body limit to match, past PocketBase's default 32 MB.
 
 There is no push service: no FCM, no ntfy.
 
-- **Reminders** are scheduled on each device from its replica: `AlarmManager.setAlarmClock`
-  on the phone, timers in `chitd` that become lastshell toasts. The watch schedules nothing.
-  It shows the phone's mirrored notification, whose actions run on the phone. Marking a
-  reminder done syncs `reminder_done`, and every device cancels its alarm or notification.
-- **Shared-note activity** reaches a phone through a `remoteMessaging` foreground service
-  holding the SSE stream, with a battery optimization exemption. A WorkManager sync every
-  15 minutes is the fallback.
+- **Reminders** are scheduled on each device from its replica: exact alarms on the phone,
+  timers in `chitd` that become lastshell toasts. Marking a reminder done syncs
+  `reminder_done`, and every device cancels its alarm or notification.
+- **Shared-note activity** reaches a phone through a WorkManager catch-up every 15 minutes
+  while the app is closed (sooner with the battery optimization exemption the app offers),
+  and through the open stream while it runs. A Wear app is not built; the watch shows the
+  phone's notifications.
 
 ## Later: suggested labels
 
