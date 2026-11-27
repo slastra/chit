@@ -1,4 +1,4 @@
-/// Reminder times: Keep's presets, the wire format, and short labels.
+/// Reminder times: the quick presets, the wire format, and short labels.
 library;
 
 import 'package:intl/intl.dart';
@@ -29,7 +29,7 @@ String reminderLabel(DateTime d, {DateTime? now}) {
   return '$day $time';
 }
 
-/// Keep's quick choices, as of [now] (local): later today (only before
+/// The quick choices, as of [now] (local): later today (only before
 /// five), tomorrow morning, and next week (Monday morning).
 List<({String label, DateTime at})> reminderPresets(DateTime now) {
   final today = DateTime(now.year, now.month, now.day);

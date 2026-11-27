@@ -230,12 +230,8 @@ final class SyncEngine {
   }
 
   Future<void> _refreshToken() async {
-    final exp = ChitApi.tokenExpiry(api.token);
-    if (exp == null || exp.difference(DateTime.now()) > const Duration(days: 3)) return;
     try {
-      final r = await api.refresh();
-      api.token = r.token;
-      onToken?.call(r.token);
+      if (await api.refreshIfDue() case final token?) onToken?.call(token);
     } on Unauthorized {
       _set(SyncPhase.signedOut, 'signed out');
       _running = false;

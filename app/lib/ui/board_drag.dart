@@ -6,6 +6,8 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'masonry.dart';
+import 'haptics.dart';
+import 'theme.dart';
 
 /// Where a dragged note would land: its section, and the note it goes in
 /// front of (null: the section's end).
@@ -83,7 +85,7 @@ class BoardDrag extends ChangeNotifier {
     _grab = grid.globalToLocal(global) - hit.rect.topLeft;
     _pointer = _lastChange = global;
     phase = DragPhase.lifted;
-    unawaited(HapticFeedback.mediumImpact());
+    pickUp();
     final scrollable = Scrollable.maybeOf(gridKey.currentContext!);
     _scroller = scrollable == null
         ? null
@@ -113,7 +115,7 @@ class BoardDrag extends ChangeNotifier {
     if (phase != DragPhase.lifted) return;
     _scroller?.stopAutoScroll();
     final moved = id!, landed = anchor!, from = _origin!;
-    unawaited(HapticFeedback.lightImpact());
+    bump();
     _settle(() {
       if (landed != from) onDrop(moved, landed);
     });
@@ -181,7 +183,7 @@ class BoardDrag extends ChangeNotifier {
     if (!steady) return;
     anchor = candidate;
     _lastChange = _pointer;
-    unawaited(HapticFeedback.selectionClick());
+    tick();
     notifyListeners();
   }
 
@@ -308,9 +310,7 @@ class _Lift extends State<_LiftedCard> with TickerProviderStateMixin {
       final slot = d._slotRect;
       final rect = _from != null && slot != null ? Rect.lerp(_from, slot, _fly.value)! : held;
       final lift = _lift.value.clamp(0.0, 1.2);
-      final radius = Theme.of(context).cardTheme.shape is RoundedRectangleBorder
-          ? (Theme.of(context).cardTheme.shape! as RoundedRectangleBorder).borderRadius
-          : BorderRadius.circular(12);
+      final radius = cardRadius(context);
       return Stack(
         children: [
           Positioned.fromRect(
@@ -343,7 +343,7 @@ class BoardGestures extends StatefulWidget {
   final bool enabled;
 
   /// A long press picked a card up: it is selected too (a press that
-  /// doesn't travel leaves it in place, selected, as in Keep).
+  /// doesn't travel leaves it in place, selected).
   final void Function(String id)? onLifted;
   final Widget child;
 

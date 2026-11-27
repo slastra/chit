@@ -1,8 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/physics.dart';
-import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
+
+import 'haptics.dart';
 
 /// How long a checked item stays in place, checked and struck through,
 /// before it folds away: long enough to see what happened.
@@ -117,7 +118,7 @@ final class CheckOff {
   /// Starts moving [id] to the checked list ([target] true) or back.
   void start(String id, {required bool target, required bool still, required VoidCallback commit}) {
     if (showsChecked(id)) return;
-    unawaited(HapticFeedback.selectionClick());
+    tick();
     if (still) {
       commit();
       return;

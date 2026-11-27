@@ -8,3 +8,6 @@ import 'package:flutter/services.dart';
 void tick() => unawaited(HapticFeedback.selectionClick());
 
 void bump() => unawaited(HapticFeedback.lightImpact());
+
+/// A card picked up to move.
+void pickUp() => unawaited(HapticFeedback.mediumImpact());

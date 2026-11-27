@@ -110,6 +110,18 @@ final class ChitApi {
     return (token: j['token']! as String, user: Person.fromJson((j['record']! as Map).cast()));
   }
 
+  /// Trades the token for a fresh one when it has under three days left
+  /// (PocketBase's tokens last two weeks), and keeps the new one. Returns
+  /// it, or null when it was not due. Throws [Unauthorized] when the
+  /// server no longer takes it.
+  Future<String?> refreshIfDue() async {
+    final exp = tokenExpiry(token);
+    if (exp == null || exp.difference(DateTime.now()) > const Duration(days: 3)) return null;
+    final r = await refresh();
+    token = r.token;
+    return r.token;
+  }
+
   /// When the token expires, read from its claims (unverified; the server
   /// checks the signature).
   static DateTime? tokenExpiry(String token) {

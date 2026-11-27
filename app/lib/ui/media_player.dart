@@ -20,35 +20,6 @@ ButtonStyle iconButtonSize(double container, double icon) => IconButton.styleFro
   padding: EdgeInsets.zero,
 );
 
-/// Plays or pauses [attachment] on the app's one player; it also starts it.
-void togglePlayback(WidgetRef ref, Attachment attachment) {
-  final media = ref.read(mediaProvider);
-  if (media != null) unawaited(ref.read(mediaDeckProvider).toggle(attachment, media));
-}
-
-/// Builds with whether [attachment] is the one on the player, and playing.
-class PlaybackBuilder extends ConsumerWidget {
-  const PlaybackBuilder({super.key, required this.attachment, required this.builder});
-  final Attachment attachment;
-  final Widget Function(BuildContext context, MediaDeck deck, bool mine, bool playing) builder;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final deck = ref.watch(mediaDeckProvider);
-    return ValueListenableBuilder(
-      valueListenable: deck.current,
-      builder: (context, current, _) => StreamBuilder(
-        stream: deck.player.stream.playing,
-        initialData: deck.player.state.playing,
-        builder: (context, playing) {
-          final mine = current == attachment.id;
-          return builder(context, deck, mine, mine && (playing.data ?? false));
-        },
-      ),
-    );
-  }
-}
-
 /// How far the player is through what it plays, 0 to 1, as it changes.
 class _Progress extends StatelessWidget {
   const _Progress({required this.player, required this.builder});
@@ -336,9 +307,7 @@ class _VideoViewState extends ConsumerState<VideoView> {
   }
 
   Future<void> _skip(int seconds) async {
-    final p = _deck.player;
-    final to = p.state.position + Duration(seconds: seconds);
-    await p.seek(to < Duration.zero ? Duration.zero : (to > p.state.duration ? p.state.duration : to));
+    await _deck.skip(seconds);
     _poke();
   }
 
@@ -427,17 +396,7 @@ class _VideoViewState extends ConsumerState<VideoView> {
                                   padding: const EdgeInsets.fromLTRB(16, 32, 16, 8),
                                   // how far the fetch is, where the seek bar
                                   // will be
-                                  child: ValueListenableBuilder(
-                                    valueListenable: deck.loading,
-                                    builder: (context, loading, _) => !mine
-                                        ? const SizedBox(height: 48)
-                                        : loading != null
-                                        ? SizedBox(
-                                            height: 48,
-                                            child: Center(child: WavyProgress(value: loading == 0 ? null : loading)),
-                                          )
-                                        : SeekBar(player: deck.player, color: Colors.white),
-                                  ),
+                                  child: DeckSeekBar(deck: deck, mine: mine, color: Colors.white),
                                 ),
                               ),
                             ),
@@ -448,97 +407,6 @@ class _VideoViewState extends ConsumerState<VideoView> {
                   ),
                 ),
               ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// An audio file full screen: its mark on an Expressive shape, its name,
-/// a large play button between back 10 and forward 10, and the seek bar.
-class AudioView extends ConsumerWidget {
-  const AudioView(this.attachment, {super.key});
-  final Attachment attachment;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final a = attachment;
-    Future<void> skip(MediaDeck deck, int seconds) async {
-      final p = deck.player;
-      final to = p.state.position + Duration(seconds: seconds);
-      await p.seek(to < Duration.zero ? Duration.zero : (to > p.state.duration ? p.state.duration : to));
-    }
-
-    return CallbackShortcuts(
-      bindings: {const SingleActivator(LogicalKeyboardKey.space): () => togglePlayback(ref, a)},
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 480),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: PlaybackBuilder(
-              attachment: a,
-              builder: (context, deck, mine, playing) => Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  DecoratedBox(
-                    decoration: ShapeDecoration(
-                      color: theme.colorScheme.primaryContainer,
-                      shape: MaterialShapeBorder(shape: MaterialShapes.cookie9Sided),
-                    ),
-                    child: SizedBox.square(
-                      dimension: 160,
-                      child: Icon(kindIcon(a), size: 56, color: theme.colorScheme.onPrimaryContainer),
-                    ),
-                  ),
-                  const SizedBox(height: 32),
-                  Text(
-                    a.name,
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 24),
-                  ValueListenableBuilder(
-                    valueListenable: deck.loading,
-                    builder: (context, loading, _) => mine && loading != null
-                        ? SizedBox(
-                            height: 48,
-                            child: Center(child: WavyProgress(value: loading == 0 ? null : loading)),
-                          )
-                        : (mine ? SeekBar(player: deck.player) : const SizedBox(height: 48)),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    spacing: 24,
-                    children: [
-                      IconButton(
-                        tooltip: 'Back 10 seconds',
-                        style: iconButtonSize(56, 32),
-                        onPressed: mine ? () => skip(deck, -10) : null,
-                        icon: const Icon(Icons.replay_10_rounded),
-                      ),
-                      IconButton.filled(
-                        tooltip: playing ? 'Pause' : 'Play',
-                        style: iconButtonSize(96, 32),
-                        onPressed: () => togglePlayback(ref, a),
-                        icon: Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded),
-                      ),
-                      IconButton(
-                        tooltip: 'Forward 10 seconds',
-                        style: iconButtonSize(56, 32),
-                        onPressed: mine ? () => skip(deck, 10) : null,
-                        icon: const Icon(Icons.forward_10_rounded),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
             ),
           ),
         ),

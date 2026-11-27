@@ -7,7 +7,7 @@ import 'package:flutter/widgets.dart';
 import 'package:material_ui/material_ui.dart' show Springs;
 
 /// Cards in columns, each placed in whichever column is shortest so far by
-/// its real height (the Keep layout), with full-width section headers
+/// its real height (a masonry layout), with full-width section headers
 /// ([MasonryChild.span]) that start the columns again below them.
 ///
 /// Every card glides to where a new layout puts it, on Material 3
@@ -172,7 +172,6 @@ class RenderMasonry extends RenderBox
   }
 
   double _spacing;
-  double get spacing => _spacing;
   set spacing(double v) {
     if (v == _spacing) return;
     _spacing = v;
@@ -211,7 +210,6 @@ class RenderMasonry extends RenderBox
   /// How many columns fit [width].
   int columnsFor(double width) => math.max(1, ((width - _overhang + _spacing) / (_minColumnWidth + _spacing)).floor());
 
-  int get columns => _columns;
   double get columnWidth => (_width - _overhang - _spacing * (_columns - 1)) / _columns;
 
   /// What the layout places for [c]: the card itself, without its overhang.

@@ -14,6 +14,7 @@ import 'feedback.dart';
 import 'phone_notifications.dart';
 import 'share_in.dart';
 import 'home_page.dart';
+import 'layout.dart';
 import 'login_page.dart';
 import 'note_page.dart';
 import 'note_routes.dart';
@@ -47,7 +48,7 @@ final _router = Provider<GoRouter>((ref) {
     routes: [
       GoRoute(path: '/', builder: (_, _) => const HomePage()),
       GoRoute(path: '/login', builder: (_, _) => const LoginPage()),
-      // an attachment, full screen above everything, the note's dialog too
+      // an attachment, full screen above everything, the detail pane too
       GoRoute(
         path: '/note/:id/file/:att',
         pageBuilder: (context, state) => MaterialPage(
@@ -62,11 +63,11 @@ final _router = Provider<GoRouter>((ref) {
           context,
           state,
           NoteOrigins.fresh,
-          (dialog) => NotePage(
+          (pane) => NotePage(
             list: state.uri.queryParameters['list'] == '1',
             initialTitle: state.uri.queryParameters['title'] ?? '',
             initialBody: state.uri.queryParameters['text'] ?? '',
-            inDialog: dialog,
+            inPane: pane,
           ),
         ),
       ),
@@ -76,7 +77,7 @@ final _router = Provider<GoRouter>((ref) {
           context,
           state,
           state.pathParameters['id']!,
-          (dialog) => NotePage(noteId: state.pathParameters['id'], inDialog: dialog),
+          (pane) => NotePage(noteId: state.pathParameters['id'], inPane: pane),
         ),
       ),
     ],

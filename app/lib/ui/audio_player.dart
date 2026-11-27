@@ -75,7 +75,7 @@ class AudioDock extends ConsumerWidget {
                             clipBehavior: Clip.none,
                             initialEntries: [
                               OverlayEntry(
-                                builder: (_) => MiniPlayer(
+                                builder: (_) => _MiniPlayer(
                                   audio: playing.audio,
                                   note: playing.note,
                                   onExpand: () {
@@ -101,8 +101,8 @@ class AudioDock extends ConsumerWidget {
 
 /// The now-playing bar: play or pause, the file and its note, close; a
 /// progress line along its foot. A tap anywhere else opens the full player.
-class MiniPlayer extends ConsumerWidget {
-  const MiniPlayer({super.key, required this.audio, required this.note, required this.onExpand});
+class _MiniPlayer extends ConsumerWidget {
+  const _MiniPlayer({required this.audio, required this.note, required this.onExpand});
   final Attachment audio;
   final Note? note;
   final VoidCallback onExpand;
@@ -203,15 +203,18 @@ Future<void> showAudioPlayer(BuildContext context, Attachment audio) async {
       isScrollControlled: true,
       useSafeArea: true,
       showDragHandle: true,
-      builder: (sheet) => _FullPlayer(audio: audio),
+      builder: (sheet) => AudioPlayerView(audio: audio),
     );
   } finally {
     _expanded.value = false;
   }
 }
 
-class _FullPlayer extends ConsumerWidget {
-  const _FullPlayer({required this.audio});
+/// The full player's face: the file's mark and name, its note, the seek
+/// bar, back 10, play, forward 10, and speed. In the bottom sheet, and in
+/// the viewer for audio reached by its address.
+class AudioPlayerView extends ConsumerWidget {
+  const AudioPlayerView({super.key, required this.audio});
   final Attachment audio;
 
   @override
@@ -220,12 +223,6 @@ class _FullPlayer extends ConsumerWidget {
     final scheme = theme.colorScheme;
     final lib = ref.watch(libraryProvider).value ?? Library.empty;
     final note = lib.note(audio.note);
-    Future<void> skip(MediaDeck deck, int seconds) async {
-      final p = deck.player;
-      final to = p.state.position + Duration(seconds: seconds);
-      await p.seek(to < Duration.zero ? Duration.zero : (to > p.state.duration ? p.state.duration : to));
-    }
-
     return CallbackShortcuts(
       bindings: {const SingleActivator(LogicalKeyboardKey.space): () => togglePlayback(ref, audio)},
       child: Focus(
@@ -270,15 +267,7 @@ class _FullPlayer extends ConsumerWidget {
                           child: Text(note.label, maxLines: 1, overflow: TextOverflow.ellipsis),
                         ),
                       const SizedBox(height: 16),
-                      ValueListenableBuilder(
-                        valueListenable: deck.loading,
-                        builder: (context, loading, _) => mine && loading != null
-                            ? SizedBox(
-                                height: 48,
-                                child: Center(child: WavyProgress(value: loading == 0 ? null : loading)),
-                              )
-                            : (mine ? SeekBar(player: deck.player) : const SizedBox(height: 48)),
-                      ),
+                      DeckSeekBar(deck: deck, mine: mine),
                       const SizedBox(height: 8),
                       Row(
                         mainAxisSize: MainAxisSize.min,
@@ -287,7 +276,7 @@ class _FullPlayer extends ConsumerWidget {
                           IconButton(
                             tooltip: 'Back 10 seconds',
                             style: iconButtonSize(56, 32),
-                            onPressed: mine ? () => skip(deck, -10) : null,
+                            onPressed: mine ? () => deck.skip(-10) : null,
                             icon: const Icon(Icons.replay_10_rounded),
                           ),
                           IconButton.filled(
@@ -299,7 +288,7 @@ class _FullPlayer extends ConsumerWidget {
                           IconButton(
                             tooltip: 'Forward 10 seconds',
                             style: iconButtonSize(56, 32),
-                            onPressed: mine ? () => skip(deck, 10) : null,
+                            onPressed: mine ? () => deck.skip(10) : null,
                             icon: const Icon(Icons.forward_10_rounded),
                           ),
                         ],

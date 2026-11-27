@@ -1,16 +1,19 @@
-/// Material 3 Expressive components material_ui (1.11) does not ship yet,
-/// built to Compose's tokens (androidx material3/tokens): the loading
-/// indicator, the wavy linear progress indicator, the connected button
-/// group (which replaces the segmented button), and the docked and floating
-/// toolbars (which replace the bottom app bar).
+/// Material 3 Expressive components material_ui does not ship yet, built to
+/// Compose's tokens (androidx material3/tokens):
+///
+/// - the loading indicator, and pull to refresh with it
+/// - the wavy linear progress indicator, and the wavy seek track
+/// - the connected button group (which replaces the segmented button)
+/// - the docked and floating toolbars (which replace the bottom app bar)
+/// - the segmented list and the segmented menu
 library;
 
-import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' show PointerDeviceKind;
 
-import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:material_ui/material_ui.dart';
+
+import 'haptics.dart';
 
 /// Sideways scrolling a mouse can drag, without a scrollbar: for rows and
 /// carousels, which a wheel alone cannot reach along.
@@ -25,9 +28,8 @@ ScrollBehavior anyPointerScroll(BuildContext context) =>
 /// in a 48dp box, in primary; [contained] sets it on a primary container
 /// circle in on primary container. [size] scales the whole thing.
 class LoadingIndicator extends StatefulWidget {
-  const LoadingIndicator({super.key, this.size = 48, this.color, this.contained = false});
+  const LoadingIndicator({super.key, this.size = 48, this.contained = false});
   final double size;
-  final Color? color;
   final bool contained;
 
   @override
@@ -59,7 +61,7 @@ class _LoadingIndicatorState extends State<LoadingIndicator> with SingleTickerPr
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final color = widget.color ?? (widget.contained ? scheme.onPrimaryContainer : scheme.primary);
+    final color = widget.contained ? scheme.onPrimaryContainer : scheme.primary;
     final shape = AnimatedBuilder(
       animation: _ctl,
       builder: (context, _) {
@@ -95,6 +97,26 @@ class _LoadingIndicatorState extends State<LoadingIndicator> with SingleTickerPr
 
 // ---- wavy progress -----------------------------------------------------------
 
+/// Expressive's wave: 3dp either side of the line, a crest every 40dp.
+const waveAmplitude = 3.0;
+const waveLength = 40.0;
+
+/// The wave from [from] to [to] along the line at [mid], [amp] high, moved
+/// along by [phase] wavelengths, easing to the line in its last 12dp at
+/// either end (so it meets a gap or a cap without a step).
+Path wavePath(double from, double to, double mid, double amp, double phase) {
+  double y(double x) {
+    final ends = math.min(1.0, math.min(x - from, to - x) / 12);
+    return mid + amp * ends * math.sin((x / waveLength - phase) * 2 * math.pi);
+  }
+
+  final path = Path()..moveTo(from, y(from));
+  for (var x = from + 1; x < to; x += 1) {
+    path.lineTo(x, y(x));
+  }
+  return path..lineTo(to, y(to));
+}
+
 /// Material's wavy linear progress indicator: the done part a wave (3dp
 /// amplitude, 40dp wavelength, 4dp thick), a 4dp gap, then the flat track,
 /// with the stop dot at its end. The wave travels while [moving] (something
@@ -102,11 +124,9 @@ class _LoadingIndicatorState extends State<LoadingIndicator> with SingleTickerPr
 /// for it. With no [value] it is indeterminate: a length of wave crossing
 /// the track, over and over.
 class WavyProgress extends StatefulWidget {
-  const WavyProgress({super.key, required this.value, this.moving = true, this.color, this.trackColor});
+  const WavyProgress({super.key, required this.value, this.moving = true});
   final double? value;
   final bool moving;
-  final Color? color;
-  final Color? trackColor;
 
   @override
   State<WavyProgress> createState() => _WavyProgressState();
@@ -154,8 +174,8 @@ class _WavyProgressState extends State<WavyProgress> with SingleTickerProviderSt
           painter: _WavePainter(
             value: value?.clamp(0.0, 1.0),
             turn: _ctl,
-            color: widget.color ?? scheme.primary,
-            track: widget.trackColor ?? scheme.secondaryContainer,
+            color: scheme.primary,
+            track: scheme.secondaryContainer,
             rtl: Directionality.of(context) == TextDirection.rtl,
           ),
         ),
@@ -174,8 +194,6 @@ class _WavePainter extends CustomPainter {
   final bool rtl;
 
   static const _thickness = 4.0;
-  static const _amplitude = 3.0;
-  static const _wavelength = 40.0;
   static const _gap = 4.0;
 
   @override
@@ -199,17 +217,7 @@ class _WavePainter extends CustomPainter {
 
     // a wave from [from] to [to], easing to the center line at its ends
     void wave(double from, double to, double amp) {
-      if (to <= from) return;
-      double y(double x) {
-        final ends = math.min(1.0, math.min(x - from, to - x) / 12);
-        return mid + amp * ends * math.sin((x / _wavelength - phase) * 2 * math.pi);
-      }
-
-      final path = Path()..moveTo(from, y(from));
-      for (var x = from + 1; x < to; x += 1) {
-        path.lineTo(x, y(x));
-      }
-      canvas.drawPath(path..lineTo(to, y(to)), stroke..color = color);
+      if (to > from) canvas.drawPath(wavePath(from, to, mid, amp, phase), stroke..color = color);
     }
 
     final value = this.value;
@@ -219,7 +227,7 @@ class _WavePainter extends CustomPainter {
       final head = (size.width + length) * Curves.easeInOut.transform(at);
       final from = math.max(r, head - length), to = math.min(size.width - r, head);
       line(r, from - _gap - r);
-      wave(from, to, _amplitude);
+      wave(from, to, waveAmplitude);
       line(to + _gap + r, size.width - r);
       return;
     }
@@ -228,7 +236,7 @@ class _WavePainter extends CustomPainter {
     line(end + (value > 0 ? _gap + r : r), size.width - r);
     canvas.drawCircle(Offset(size.width - r, mid), r, Paint()..color = color);
     // the wave: full between 10% and 95%, flat towards either end
-    final amp = _amplitude * (value < 0.1 ? value / 0.1 : (value > 0.95 ? (1 - value) / 0.05 : 1.0));
+    final amp = waveAmplitude * (value < 0.1 ? value / 0.1 : (value > 0.95 ? (1 - value) / 0.05 : 1.0));
     wave(r, end - r, amp);
   }
 
@@ -323,7 +331,7 @@ class ConnectedButtonGroup<T> extends StatelessWidget {
 /// Material's docked toolbar, along the foot of a page (it replaces the
 /// bottom app bar). DockedToolbarTokens: 64dp tall, 16dp at either end, on
 /// surface container, square, no elevation. [color] overrides the
-/// container (a toolbar inside a dialog sits on the dialog's own).
+/// container (a toolbar inside a pane or dialog sits on its own).
 class DockedToolbar extends StatelessWidget {
   const DockedToolbar({super.key, required this.children, this.color});
   final List<Widget> children;
@@ -405,9 +413,6 @@ class WavyTrackShape extends SliderTrackShape with BaseSliderTrackShape {
   final double phase;
   final double swell;
 
-  static const _amplitude = 3.0;
-  static const _wavelength = 40.0;
-
   @override
   void paint(
     PaintingContext context,
@@ -455,20 +460,7 @@ class WavyTrackShape extends SliderTrackShape with BaseSliderTrackShape {
     final thumb = textDirection == TextDirection.rtl ? rect.left + rect.right - thumbCenter.dx : thumbCenter.dx;
     // played: the wave, easing to the center line at either end
     final from = rect.left + r, to = thumb - gap - r;
-    if (to > from) {
-      final amp = _amplitude * swell;
-      double y(double x) {
-        final ends = math.min(1.0, math.min(x - from, to - x) / 12);
-        return mid + amp * ends * math.sin((x / _wavelength - phase) * 2 * math.pi);
-      }
-
-      final path = Path()..moveTo(from, y(from));
-      for (var x = from + 1; x < to; x += 1) {
-        path.lineTo(x, y(x));
-      }
-      path.lineTo(to, y(to));
-      canvas.drawPath(path, stroke..color = active);
-    }
+    if (to > from) canvas.drawPath(wavePath(from, to, mid, waveAmplitude * swell, phase), stroke..color = active);
     // to come: the flat line, and the stop dot at its end
     final rest = thumb + gap + r, end = rect.right - r;
     if (end > rest) canvas.drawLine(Offset(rest, mid), Offset(end, mid), stroke..color = inactive);
@@ -509,7 +501,7 @@ class _PullToRefreshState extends State<PullToRefresh> {
           onRefresh: widget.onRefresh,
           onStatusChange: (s) {
             // far enough to let go: felt
-            if (s == RefreshIndicatorStatus.armed) unawaited(HapticFeedback.selectionClick());
+            if (s == RefreshIndicatorStatus.armed) tick();
             setState(() => _status = s);
           },
           child: widget.child,

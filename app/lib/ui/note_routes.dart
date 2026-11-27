@@ -5,23 +5,14 @@ import 'package:flutter/services.dart' show PredictiveBackEvent;
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'layout.dart';
+
 /// How a note opens, by window size (Material's list-detail layout):
 ///
 /// - compact and medium windows: the whole window, grown out of the note's
 ///   card (or the new-note button) by a container transform, and shrunk
 ///   back into it on the way out; on Android the Back gesture drags it
 /// - expanded windows: a detail pane beside the board, which stays in use
-bool isExpandedWidth(double width) => width >= 840;
-
-/// The detail pane's width for a window [width] wide: about a third of it,
-/// never narrower than a phone nor wider than text reads well.
-double detailPaneWidth(double width) => (width * 0.36).clamp(360.0, 520.0);
-
-/// The space between the board and the detail pane, and around the pane.
-const paneSpacer = 24.0;
-
-/// Whether a note is open on [router]'s stack (under a viewer, too).
-bool noteRouteOpen(GoRouter router) => openNoteId(router) != null;
 
 /// The note open on [router]'s stack: its id, 'new' for one not kept yet,
 /// null for none.
@@ -38,7 +29,7 @@ String? openNoteId(GoRouter router) {
 /// takes its place.
 Future<void> openNote(BuildContext context, String location) async {
   final router = GoRouter.of(context);
-  if (isExpandedWidth(MediaQuery.sizeOf(context).width) && noteRouteOpen(router)) {
+  if (isExpandedWidth(MediaQuery.sizeOf(context).width) && openNoteId(router) != null) {
     router.pushReplacement(location);
     return;
   }

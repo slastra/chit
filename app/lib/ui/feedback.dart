@@ -9,7 +9,7 @@ final messengerKey = GlobalKey<ScaffoldMessengerState>();
 /// Room to keep clear above the bottom edge, for a FAB the snackbar must not
 /// cover (Material sets snackbars above FABs). The page that shows the FAB
 /// sets it; the host's own scaffold has none to measure.
-final snackbarClearance = ValueNotifier<double>(0);
+double snackbarClearance = 0;
 
 /// Wraps the app's navigator (MaterialApp.builder) in one ScaffoldMessenger
 /// and a transparent Scaffold. Every page's Scaffold then sits inside that
@@ -28,41 +28,30 @@ class SnackbarHost extends StatelessWidget {
 }
 
 /// A plain message, timed like the rest.
-void showMessage(String message) {
+void showMessage(String message) => _show(message);
+
+/// A snackbar with Undo: Material's answer to a reversible action, instead
+/// of asking first. Timed: with an action a snackbar would otherwise stay
+/// until dismissed (screen readers keep it regardless, as they should).
+void showUndo(String message, VoidCallback undo) => _show(message, undo: undo);
+
+/// A floating snackbar, at most 600dp wide, clear of the FAB, for six
+/// seconds; one with Undo takes the place of any showing.
+void _show(String message, {VoidCallback? undo}) {
   final context = messengerKey.currentContext;
-  if (context == null) return;
+  final messenger = messengerKey.currentState;
+  if (context == null || messenger == null) return;
   final wide = MediaQuery.sizeOf(context).width >= 600 + 2 * 12;
-  messengerKey.currentState?.showSnackBar(
+  if (undo != null) messenger.hideCurrentSnackBar();
+  messenger.showSnackBar(
     SnackBar(
       content: Text(message),
       behavior: SnackBarBehavior.floating,
       width: wide ? 600 : null,
-      margin: wide ? null : EdgeInsets.fromLTRB(12, 0, 12, 12 + snackbarClearance.value),
+      margin: wide ? null : EdgeInsets.fromLTRB(12, 0, 12, 12 + snackbarClearance),
       duration: const Duration(seconds: 6),
+      persist: undo == null ? null : false,
+      action: undo == null ? null : SnackBarAction(label: 'Undo', onPressed: undo),
     ),
   );
-}
-
-/// A snackbar with Undo: Material's answer to a reversible action, instead
-/// of asking first. Floating, at most 600dp wide, and timed: with an action a
-/// snackbar would otherwise stay until dismissed (screen readers keep it
-/// regardless, as they should).
-void showUndo(String message, VoidCallback undo) {
-  final context = messengerKey.currentContext;
-  if (context == null) return;
-  final width = MediaQuery.sizeOf(context).width;
-  final wide = width >= 600 + 2 * 12;
-  messengerKey.currentState
-    ?..hideCurrentSnackBar()
-    ..showSnackBar(
-      SnackBar(
-        content: Text(message),
-        behavior: SnackBarBehavior.floating,
-        width: wide ? 600 : null,
-        margin: wide ? null : EdgeInsets.fromLTRB(12, 0, 12, 12 + snackbarClearance.value),
-        duration: const Duration(seconds: 6),
-        persist: false,
-        action: SnackBarAction(label: 'Undo', onPressed: undo),
-      ),
-    );
 }

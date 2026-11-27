@@ -6,8 +6,7 @@ import 'attachments.dart';
 import 'note_routes.dart';
 
 /// What a note made now starts with: the label being looked at, or a
-/// reminder when made from the Reminders shelf (as Keep does). The board
-/// keeps it current.
+/// reminder when made from the Reminders shelf. The board keeps it current.
 final newNoteDefaults = ValueNotifier<({String? label, bool remind})>((label: null, remind: false));
 
 /// What a new note can start as.

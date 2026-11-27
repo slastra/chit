@@ -22,6 +22,7 @@ import 'check_motion.dart';
 import '../notifications.dart';
 import 'create.dart' show newNoteDefaults;
 import 'labels_ui.dart';
+import 'layout.dart';
 import 'reminder_picker.dart';
 import 'share_sheet.dart';
 import 'feedback.dart';
@@ -29,24 +30,24 @@ import 'theme.dart';
 import 'expressive.dart';
 
 /// One note, open or new. Edits save as you pause (and work offline). A new
-/// note only exists once something is typed; leaving one empty discards it,
-/// as Keep does. The page wears the note's color: its whole scheme comes
+/// note only exists once something is typed; leaving one empty discards it.
+/// The page wears the note's color: its whole scheme comes
 /// from that hue.
 class NotePage extends ConsumerStatefulWidget {
   const NotePage({
     super.key,
     this.noteId,
     this.list = false,
-    this.inDialog = false,
+    this.inPane = false,
     this.initialTitle = '',
     this.initialBody = '',
   });
 
   final String? noteId;
 
-  /// Shown as a dialog over the board (expanded windows): an elevated
-  /// surface, and a close button instead of back.
-  final bool inDialog;
+  /// Shown in the detail pane beside the board (expanded windows): on the
+  /// pane's raised surface, with a close button instead of back.
+  final bool inPane;
 
   /// For a new note: start as a checklist.
   final bool list;
@@ -255,16 +256,7 @@ class _NotePageState extends ConsumerState<NotePage> {
     return false;
   }
 
-  void _removeFile(Attachment a) {
-    if (a.pending) {
-      unawaited(ref.read(replicaProvider).dropUpload(a.id));
-      return;
-    }
-    final engine = _engine;
-    if (engine == null) return;
-    unawaited(engine.edit([engine.op(Collections.attachments, a.id, 'deleted', true)]));
-    showUndo('File removed', () => engine.edit([engine.op(Collections.attachments, a.id, 'deleted', false)]));
-  }
+  void _removeFile(Attachment a) => removeAttachment(ref, a);
 
   /// A picture or file a keyboard inserts (Android's image keyboards and
   /// clipboard suggestions).
@@ -382,7 +374,7 @@ class _NotePageState extends ConsumerState<NotePage> {
     final role = note == null ? Role.owner : roleOf(note, members, me);
     final editable = _editable = canEdit(role);
     final shared = members.isNotEmpty || !owned;
-    final roomy = widget.inDialog || MediaQuery.sizeOf(context).width >= 600;
+    final roomy = widget.inPane || !isCompact(context);
     final reminder = !_exists ? _startReminder : (state.reminderDone ? null : reminderTime(state.reminder));
     final labels = _exists ? lib.labelsOf(_id) : lib.labels.where((l) => l.id == _defaults.label).toList();
     final trashed = note?.trashed.isNotEmpty ?? false;
@@ -402,11 +394,11 @@ class _NotePageState extends ConsumerState<NotePage> {
     final spec = ref.watch(themeSpecProvider).value;
     final scheme = noteScheme(note?.color ?? '', appTheme.brightness);
     // Rebuilt whole (themeFor), never copied, so component themes such as
-    // the app bar's follow the page's surface. In a dialog an uncolored note
-    // sits on Material's dialog container; a colored one on its color.
+    // the app bar's follow the page's surface. In the pane an uncolored note
+    // sits on the pane's container; a colored one on its color.
     final theme = scheme != null
         ? themeFor(scheme.copyWith(surface: scheme.primaryContainer, onSurface: scheme.onPrimaryContainer), spec)
-        : widget.inDialog
+        : widget.inPane
         ? themeFor(appTheme.colorScheme.copyWith(surface: appTheme.colorScheme.surfaceContainerHigh), spec)
         : appTheme;
     final text = theme.textTheme;
@@ -482,11 +474,11 @@ class _NotePageState extends ConsumerState<NotePage> {
       data: theme,
       // in the detail pane, Escape closes the note (a page has Back)
       child: CallbackShortcuts(
-        bindings: {if (widget.inDialog) const SingleActivator(LogicalKeyboardKey.escape): () => context.pop()},
+        bindings: {if (widget.inPane) const SingleActivator(LogicalKeyboardKey.escape): () => context.pop()},
         child: Scaffold(
           backgroundColor: theme.colorScheme.surface,
           appBar: AppBar(
-            leading: widget.inDialog
+            leading: widget.inPane
                 ? IconButton(tooltip: 'Close', icon: const Icon(Icons.close), onPressed: () => context.pop())
                 : null,
             actions: [
@@ -713,7 +705,7 @@ class _NotePageState extends ConsumerState<NotePage> {
           bottomNavigationBar: _NoteBar(
             isList: isList,
             editable: editable,
-            inDialog: widget.inDialog,
+            inPane: widget.inPane,
             color: note?.color ?? '',
             edited: note?.updated ?? '',
             onToggleList: () => _convert(note, items),
@@ -830,7 +822,7 @@ class _NoteBar extends StatelessWidget {
   const _NoteBar({
     required this.isList,
     required this.editable,
-    required this.inDialog,
+    required this.inPane,
     required this.color,
     required this.edited,
     required this.onToggleList,
@@ -841,7 +833,7 @@ class _NoteBar extends StatelessWidget {
 
   /// A viewer gets no content tools, only when it was last edited.
   final bool editable;
-  final bool inDialog;
+  final bool inPane;
   final String color;
   final String edited;
   final VoidCallback onToggleList;
@@ -853,10 +845,10 @@ class _NoteBar extends StatelessWidget {
     final theme = Theme.of(context);
     final when = DateTime.tryParse(edited.replaceFirst(' ', 'T'))?.toLocal();
     // a docked toolbar (Material 3 Expressive's replacement for the bottom
-    // app bar). Inside a dialog it sits on the dialog's own container, as a
-    // dialog's actions do, rather than a darker band across its foot
+    // app bar). In the pane it sits on the pane's own container rather than
+    // a darker band across its foot
     return DockedToolbar(
-      color: inDialog ? theme.colorScheme.surface : null,
+      color: inPane ? theme.colorScheme.surface : null,
       children: [
         if (editable) ...[
           IconButton(

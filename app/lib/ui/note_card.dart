@@ -16,11 +16,13 @@ import 'media_player.dart';
 import 'check_motion.dart';
 import 'note_colors.dart';
 import 'people.dart';
+import 'haptics.dart';
+import 'theme.dart';
 
 /// A note on the grid: title, the start of the body or the open items, and
 /// small marks for pinned, reminder, shared and files. A plain note is an
-/// outlined card; a colored one fills with its color's tonal container (as
-/// Keep draws them). Lists check off right on the card.
+/// outlined card; a colored one is a filled card in its color's tonal
+/// container. Lists check off right on the card.
 class NoteCard extends ConsumerStatefulWidget {
   const NoteCard({
     super.key,
@@ -158,7 +160,7 @@ class _NoteCardState extends ConsumerState<NoteCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // images across the top, as Keep shows them
+          // pictures lead the card
           if (images.isNotEmpty) _CardImages(images: images),
           if (videos.isNotEmpty) InlineVideo(videos.first),
           // content: title, then the text or the open items
@@ -287,11 +289,9 @@ class _NoteCardState extends ConsumerState<NoteCard> {
     );
     // The theme's card shape (the desktop's corner radius) has no border, and
     // would erase the outlined card's; put the hairline back on it.
-    final corners = theme.cardTheme.shape is RoundedRectangleBorder
-        ? (theme.cardTheme.shape! as RoundedRectangleBorder).borderRadius
-        : const BorderRadius.all(Radius.circular(12));
+    final corners = cardRadius(context);
     // selected: a 2dp primary outline, and a check on the card's top start
-    // corner, half off the card (as Keep draws it)
+    // corner, half off the card
     final selected = widget.selected;
     final selectedSide = BorderSide(color: theme.colorScheme.primary, width: 2);
     final openSide = BorderSide(color: theme.colorScheme.outline);
@@ -433,7 +433,7 @@ class _ItemLineState extends State<_ItemLine> {
 
   void _check() {
     if (_checked || _done || _locked) return;
-    unawaited(HapticFeedback.selectionClick());
+    tick();
     if (MediaQuery.disableAnimationsOf(context)) {
       _send();
       return;

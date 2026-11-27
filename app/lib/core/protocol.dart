@@ -166,7 +166,8 @@ final class Label {
   Clocks get clocks => _clocks(json['clocks']);
 }
 
-/// The reader's own view of a note: what Keep keeps private on shared notes.
+/// The reader's own view of a note: what stays private to each person on a
+/// shared note (pinned, archived, labels, reminder, place on the board).
 final class NoteState {
   NoteState(this.json);
   final Json json;
@@ -200,12 +201,20 @@ final class Attachment {
   late final MediaKind kind = MediaKind.of(type, name);
   bool get isImage => kind == MediaKind.image;
 
+  /// A file on its way, in words: waiting, or how far it has got.
+  static String uploadStatus(double? progress) =>
+      progress == null ? 'Waiting to upload' : 'Uploading ${(progress * 100).round()}%';
+
   /// Set only on this device, for a file still waiting to upload.
   bool get pending => json['pending'] == true;
   String get local => json['local'] as String? ?? '';
 
   String get path => '/api/files/${Collections.attachments}/$id/$file';
 }
+
+/// What a recorded voice memo's name starts with; a file named so gets the
+/// microphone mark rather than a note's.
+const voiceMemoName = 'Voice memo';
 
 /// How a file is shown. By MIME type, falling back to the name's extension
 /// (the server sniffs types, and a sniff can come back as octet-stream).
@@ -229,13 +238,9 @@ enum MediaKind {
     if (t.startsWith('video/')) return video;
     if (t.startsWith('audio/')) return audio;
     if (t == 'application/pdf') return pdf;
-    return switch (ext) {
-      'jpg' || 'jpeg' || 'png' || 'gif' || 'webp' || 'heic' || 'avif' || 'bmp' => image,
-      'mp4' || 'mov' || 'm4v' || 'webm' || 'mkv' || 'avi' || '3gp' => video,
-      'mp3' || 'm4a' || 'aac' || 'ogg' || 'opus' || 'oga' || 'wav' || 'flac' || 'weba' => audio,
-      'pdf' => pdf,
-      _ => other,
-    };
+    // no type worth reading (octet-stream, say): the name's
+    final guessed = guessType(name);
+    return guessed == 'application/octet-stream' ? other : of(guessed, name);
   }
 }
 
@@ -265,3 +270,32 @@ final class Snapshot {
 
 String encodeJson(Object? v) => jsonEncode(v);
 Object? decodeJson(String s) => jsonDecode(s);
+
+/// A MIME type from a file name, for showing a file before the server has
+/// sniffed it.
+String guessType(String name) {
+  final ext = name.contains('.') ? name.split('.').last.toLowerCase() : '';
+  return switch (ext) {
+    'jpg' || 'jpeg' => 'image/jpeg',
+    'png' => 'image/png',
+    'gif' => 'image/gif',
+    'webp' => 'image/webp',
+    'heic' => 'image/heic',
+    'avif' => 'image/avif',
+    'bmp' => 'image/bmp',
+    'mp4' || 'm4v' => 'video/mp4',
+    'mov' => 'video/quicktime',
+    'webm' => 'video/webm',
+    'mkv' => 'video/x-matroska',
+    '3gp' => 'video/3gpp',
+    'avi' => 'video/x-msvideo',
+    'mp3' => 'audio/mpeg',
+    'm4a' || 'aac' => 'audio/mp4',
+    'ogg' || 'oga' || 'opus' => 'audio/ogg',
+    'weba' => 'audio/webm',
+    'wav' => 'audio/wav',
+    'flac' => 'audio/flac',
+    'pdf' => 'application/pdf',
+    _ => 'application/octet-stream',
+  };
+}

@@ -13,6 +13,7 @@ import '../data/media.dart';
 import '../data/replica.dart';
 import '../state/providers.dart';
 import 'attachments.dart';
+import 'audio_player.dart';
 import 'expressive.dart';
 import 'media_player.dart';
 import 'feedback.dart';
@@ -56,14 +57,7 @@ class _ViewerPageState extends ConsumerState<ViewerPage> {
   }
 
   void _delete(Attachment a) {
-    final engine = ref.read(engineProvider);
-    if (engine == null) return;
-    if (a.pending) {
-      unawaited(ref.read(replicaProvider).dropUpload(a.id));
-    } else {
-      unawaited(engine.edit([engine.op(Collections.attachments, a.id, 'deleted', true)]));
-      showUndo('File removed', () => engine.edit([engine.op(Collections.attachments, a.id, 'deleted', false)]));
-    }
+    removeAttachment(ref, a);
     context.pop();
   }
 
@@ -91,7 +85,7 @@ class _ViewerPageState extends ConsumerState<ViewerPage> {
       ),
       MediaKind.pdf => _Pdf(a),
       MediaKind.video => VideoView(a),
-      MediaKind.audio => AudioView(a),
+      MediaKind.audio => AudioPlayerView(audio: a),
       MediaKind.other => _Other(a, onSave: () => _save(a)),
     };
 
@@ -167,7 +161,7 @@ class _ViewerBar extends StatelessWidget implements PreferredSizeWidget {
                       style: theme.textTheme.titleLarge?.copyWith(color: theme.colorScheme.onSurface),
                     ),
                     Text(
-                      a.pending ? 'Waiting to upload' : '${formatSize(a.size)} · ${kindLabel(a)}',
+                      a.pending ? Attachment.uploadStatus(null) : '${formatSize(a.size)} · ${kindLabel(a)}',
                       maxLines: 1,
                       style: theme.textTheme.labelMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                     ),

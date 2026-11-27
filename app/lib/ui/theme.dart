@@ -135,3 +135,13 @@ extension on ColorScheme {
   ColorScheme harmonized(Brightness b) =>
       ColorScheme.fromSeed(seedColor: primary, brightness: b, dynamicSchemeVariant: DynamicSchemeVariant.tonalSpot);
 }
+
+/// A card's corners, from the theme's shape scale (the desktop theme file
+/// can change them): for what must match a card, its outline, its picture,
+/// its placeholder while dragged, its lifted copy.
+BorderRadius cardRadius(BuildContext context) {
+  final shape = Theme.of(context).cardTheme.shape;
+  return shape is RoundedRectangleBorder
+      ? shape.borderRadius.resolve(Directionality.of(context))
+      : const BorderRadius.all(Radius.circular(12));
+}

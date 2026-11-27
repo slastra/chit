@@ -1,3 +1,5 @@
+export '../data/catch_up.dart' show Session;
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
@@ -7,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/hlc.dart';
 import '../core/protocol.dart';
 import '../data/api.dart';
+import '../data/catch_up.dart';
 import '../data/database.dart';
 import '../data/local_files.dart' as files;
 import '../data/media.dart';
@@ -29,10 +32,6 @@ final dbProvider = Provider<ChitDb>((ref) {
 
 final replicaProvider = Provider<Replica>((ref) => Replica(ref.watch(dbProvider)));
 
-/// A signed-in session. Kept in the replica's own database (its meta table),
-/// which is private to the app on every platform.
-typedef Session = ({String server, String token, Person user, String device});
-
 final sessionProvider = AsyncNotifierProvider<SessionNotifier, Session?>(SessionNotifier.new);
 
 final class SessionNotifier extends AsyncNotifier<Session?> {
@@ -40,16 +39,9 @@ final class SessionNotifier extends AsyncNotifier<Session?> {
 
   @override
   Future<Session?> build() async {
-    final server = await _replica.meta('server');
-    final token = await _replica.meta('token');
-    final user = await _replica.meta('user_json');
-    if (server == null || token == null || token.isEmpty || user == null) return null;
-    return (
-      server: server,
-      token: token,
-      user: Person.fromJson((jsonDecode(user) as Map).cast()),
-      device: await _device(),
-    );
+    // the device id is made here, once; the background reads it as is
+    await _device();
+    return readSession(_replica);
   }
 
   /// This install's device id, made once. The server uses it to leave this

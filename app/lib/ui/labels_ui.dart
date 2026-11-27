@@ -9,11 +9,11 @@ import '../data/replica.dart';
 import '../state/providers.dart';
 import 'expressive.dart';
 import 'feedback.dart';
-import 'home_page.dart' show isExpanded;
+import 'layout.dart';
 
 /// Creates a label called [name] (or finds the one already called that) and
 /// returns its id; null when the name is empty or nobody is signed in.
-String? ensureLabel(WidgetRef ref, String name) {
+String? _ensureLabel(WidgetRef ref, String name) {
   final clean = labelName(name);
   final engine = ref.read(engineProvider);
   if (clean.isEmpty || engine == null) return null;
@@ -25,7 +25,7 @@ String? ensureLabel(WidgetRef ref, String name) {
 }
 
 /// Turns [label] on or off for [notes], sending only the notes that change.
-void setLabel(WidgetRef ref, Iterable<String> notes, String label, {required bool on}) {
+void _setLabel(WidgetRef ref, Iterable<String> notes, String label, {required bool on}) {
   final engine = ref.read(engineProvider);
   final lib = ref.read(libraryProvider).value;
   if (engine == null || lib == null) return;
@@ -44,28 +44,7 @@ void setLabel(WidgetRef ref, Iterable<String> notes, String label, {required boo
 /// dialog on expanded windows, a bottom sheet on compact ones. Each change
 /// applies as it is made.
 Future<void> showLabelPicker(BuildContext context, List<String> notes) {
-  final picker = _LabelPicker(notes: notes);
-  if (isExpanded(context)) {
-    return showDialog<void>(
-      context: context,
-      builder: (context) => Dialog(
-        child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 400, maxHeight: 560), child: picker),
-      ),
-    );
-  }
-  return showModalBottomSheet<void>(
-    context: context,
-    showDragHandle: true,
-    isScrollControlled: true,
-    useSafeArea: true,
-    builder: (context) => Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.7),
-        child: picker,
-      ),
-    ),
-  );
+  return showAdaptive<void>(context, maxWidth: 400, maxHeight: 560, build: (_, _) => _LabelPicker(notes: notes));
 }
 
 class _LabelPicker extends ConsumerStatefulWidget {
@@ -86,10 +65,10 @@ class _LabelPickerState extends ConsumerState<_LabelPicker> {
   }
 
   void _create() {
-    final id = ensureLabel(ref, _filter.text);
+    final id = _ensureLabel(ref, _filter.text);
     if (id == null) return;
     // the label's record and the notes' lists go out together, in order
-    setLabel(ref, widget.notes, id, on: true);
+    _setLabel(ref, widget.notes, id, on: true);
     _filter.clear();
     setState(() {});
   }
@@ -142,7 +121,7 @@ class _LabelPickerState extends ConsumerState<_LabelPicker> {
                       tristate: true,
                       value: labelState([for (final n in widget.notes) lib.stateOf(n).labels], l.id),
                       // a dash (some of the notes) checks it for all of them
-                      onChanged: (v) => setLabel(
+                      onChanged: (v) => _setLabel(
                         ref,
                         widget.notes,
                         l.id,
@@ -182,23 +161,13 @@ class _LabelPickerState extends ConsumerState<_LabelPicker> {
 /// Creating, renaming and deleting labels: a basic dialog on expanded
 /// windows, a full-screen one on compact ones (Material's pattern for a
 /// dialog with a form).
-Future<void> showEditLabels(BuildContext context) {
-  if (isExpanded(context)) {
-    return showDialog<void>(
-      context: context,
-      builder: (context) => Dialog(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 400, maxHeight: 600),
-          child: const _EditLabels(fullscreen: false),
-        ),
-      ),
-    );
-  }
-  return showDialog<void>(
-    context: context,
-    builder: (context) => const Dialog.fullscreen(child: _EditLabels(fullscreen: true)),
-  );
-}
+Future<void> showEditLabels(BuildContext context) => showAdaptive<void>(
+  context,
+  compact: CompactForm.fullscreen,
+  maxWidth: 400,
+  maxHeight: 600,
+  build: (_, inDialog) => _EditLabels(fullscreen: !inDialog),
+);
 
 class _EditLabels extends ConsumerStatefulWidget {
   const _EditLabels({required this.fullscreen});
@@ -225,7 +194,7 @@ class _EditLabelsState extends ConsumerState<_EditLabels> {
       showMessage('There is already a label called $name');
       return;
     }
-    ensureLabel(ref, name);
+    _ensureLabel(ref, name);
     _new.clear();
   }
 

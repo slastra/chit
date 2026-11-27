@@ -8,7 +8,7 @@ import '../notifications.dart';
 import '../state/providers.dart';
 import 'expressive.dart';
 import 'haptics.dart';
-import 'home_page.dart' show isExpanded;
+import 'layout.dart';
 import 'labels_ui.dart';
 
 /// Whether this phone tells of other people's edits to shared notes.
@@ -29,21 +29,10 @@ final _exemptProvider = FutureProvider<bool?>((ref) async {
 /// Settings: the account, labels, and on a phone its notifications. A
 /// dialog on expanded windows, a full-screen one on compact ones.
 Future<void> showSettings(BuildContext context) {
-  if (isExpanded(context)) {
-    return showDialog<void>(
-      context: context,
-      builder: (context) => Dialog(
-        clipBehavior: Clip.antiAlias,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 480, maxHeight: 640),
-          child: const _Settings(fullscreen: false),
-        ),
-      ),
-    );
-  }
-  return showDialog<void>(
-    context: context,
-    builder: (context) => const Dialog.fullscreen(child: _Settings(fullscreen: true)),
+  return showAdaptive<void>(
+    context,
+    compact: CompactForm.fullscreen,
+    build: (_, inDialog) => _Settings(fullscreen: !inDialog),
   );
 }
 

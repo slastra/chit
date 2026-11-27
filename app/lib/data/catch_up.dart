@@ -5,10 +5,14 @@ import '../core/protocol.dart';
 import 'api.dart';
 import 'replica.dart';
 
+/// A signed-in session. Kept in the replica's own database (its meta
+/// table), which is private to the app on every platform.
+typedef Session = ({String server, String token, Person user, String device});
+
 /// A signed-in session as saved in the replica, read without Riverpod (the
 /// Android background worker and notification actions run in engines of
 /// their own). Null when signed out. Never makes a device id.
-Future<({String server, String token, Person user, String device})?> readSession(Replica replica) async {
+Future<Session?> readSession(Replica replica) async {
   final server = await replica.meta('server');
   final token = await replica.meta('token');
   final user = await replica.meta('user_json');

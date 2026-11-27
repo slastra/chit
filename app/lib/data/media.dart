@@ -13,32 +13,6 @@ const maxAttachmentSize = 250 << 20;
 /// A file picked, pasted, dropped or recorded, on its way to a note.
 typedef NewFile = ({String name, int size, String? path, Uint8List? bytes});
 
-/// A MIME type from a file name, for showing a file before the server has
-/// sniffed it.
-String guessType(String name) {
-  final ext = name.contains('.') ? name.split('.').last.toLowerCase() : '';
-  return switch (ext) {
-    'jpg' || 'jpeg' => 'image/jpeg',
-    'png' => 'image/png',
-    'gif' => 'image/gif',
-    'webp' => 'image/webp',
-    'heic' => 'image/heic',
-    'avif' => 'image/avif',
-    'mp4' || 'm4v' => 'video/mp4',
-    'mov' => 'video/quicktime',
-    'webm' => 'video/webm',
-    'mkv' => 'video/x-matroska',
-    '3gp' => 'video/3gpp',
-    'mp3' => 'audio/mpeg',
-    'm4a' || 'aac' => 'audio/mp4',
-    'ogg' || 'oga' || 'opus' => 'audio/ogg',
-    'wav' => 'audio/wav',
-    'flac' => 'audio/flac',
-    'pdf' => 'application/pdf',
-    _ => 'application/octet-stream',
-  };
-}
-
 /// Sizes the way people read them.
 String formatSize(int bytes) {
   if (bytes < 1024) return '$bytes B';

@@ -104,11 +104,7 @@ Future<void> _run(String task) async {
 }
 
 Future<void> _refreshToken(Replica replica, ChitApi api) async {
-  final exp = ChitApi.tokenExpiry(api.token);
-  if (exp == null || exp.difference(DateTime.now()) > const Duration(days: 1)) return;
-  final r = await api.refresh();
-  api.token = r.token;
-  await replica.setMeta('token', r.token);
+  if (await api.refreshIfDue() case final token?) await replica.setMeta('token', token);
 }
 
 /// Done or Snooze tapped on a reminder with the app not in front. The

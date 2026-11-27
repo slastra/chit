@@ -1,6 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
-import 'home_page.dart' show isExpanded;
+import 'layout.dart';
 
 /// Note colors by name (the server stores the name). Each hue seeds a tonal
 /// scheme, so a colored note reads well in light and dark alike. These use
@@ -43,17 +43,16 @@ ColorScheme? noteScheme(String name, Brightness brightness) {
 /// Material's pattern for a small anchored choice); on compact ones a
 /// bottom sheet.
 class ColorButton extends StatelessWidget {
-  const ColorButton({super.key, required this.current, required this.onPick, this.tooltip = 'Background color'});
+  const ColorButton({super.key, required this.current, required this.onPick});
   final String current;
   final ValueChanged<String> onPick;
-  final String tooltip;
 
   @override
   Widget build(BuildContext context) {
     if (isExpanded(context)) {
       return MenuAnchor(
         builder: (context, ctl, _) => IconButton(
-          tooltip: tooltip,
+          tooltip: 'Background color',
           icon: const Icon(Icons.palette_outlined),
           onPressed: () => ctl.isOpen ? ctl.close() : ctl.open(),
         ),
@@ -78,7 +77,7 @@ class ColorButton extends StatelessWidget {
       );
     }
     return IconButton(
-      tooltip: tooltip,
+      tooltip: 'Background color',
       icon: const Icon(Icons.palette_outlined),
       onPressed: () => showColorSheet(context, current: current, onPick: onPick),
     );

@@ -10,7 +10,7 @@ import '../data/api.dart';
 import '../data/replica.dart';
 import '../state/providers.dart';
 import 'feedback.dart';
-import 'home_page.dart' show isExpanded;
+import 'layout.dart';
 import 'people.dart';
 import 'expressive.dart';
 
@@ -18,20 +18,7 @@ import 'expressive.dart';
 /// their role, and removing them: a dialog on expanded windows, a bottom
 /// sheet on compact ones. Anyone it was shared with can leave it here.
 Future<void> showShareSheet(BuildContext context, String noteId) {
-  final sheet = _ShareSheet(noteId: noteId);
-  return isExpanded(context)
-      ? showDialog<void>(
-          context: context,
-          builder: (_) => Dialog(
-            child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 480, maxHeight: 640), child: sheet),
-          ),
-        )
-      : showModalBottomSheet<void>(
-          context: context,
-          isScrollControlled: true,
-          showDragHandle: true,
-          builder: (_) => SafeArea(child: sheet),
-        );
+  return showAdaptive<void>(context, build: (_, _) => _ShareSheet(noteId: noteId));
 }
 
 class _ShareSheet extends ConsumerStatefulWidget {

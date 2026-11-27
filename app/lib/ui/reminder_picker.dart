@@ -5,11 +5,11 @@ import 'package:material_ui/material_ui.dart';
 
 import '../core/reminders.dart';
 import 'expressive.dart';
-import 'home_page.dart' show isExpanded;
+import 'layout.dart';
 
 /// Asks for a reminder date and time with Material's pickers. Null when
 /// cancelled.
-Future<DateTime?> pickReminder(BuildContext context, {DateTime? initial}) async {
+Future<DateTime?> _pickReminder(BuildContext context, {DateTime? initial}) async {
   final now = DateTime.now();
   final start = initial != null && initial.isAfter(now) ? initial : now.add(const Duration(hours: 1));
   final day = await showDatePicker(
@@ -43,7 +43,7 @@ List<({String label, String detail, IconData icon, FutureOr<void> Function(Build
     detail: '',
     icon: Icons.event_outlined,
     run: (context) async {
-      final at = await pickReminder(context, initial: current);
+      final at = await _pickReminder(context, initial: current);
       if (at != null) onSet(at);
     },
   ),
