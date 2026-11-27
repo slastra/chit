@@ -1,7 +1,17 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+// The Play upload key, outside the repo (android/key.properties links to
+// ~/.local/share/chit-signing). Without it, release builds sign with the
+// debug key, as before: fine to sideload, refused by Play.
+val upload = Properties().apply {
+    val f = rootProject.file("key.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
 }
 
 android {
@@ -18,7 +28,6 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "us.lastra.chit"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
@@ -32,11 +41,20 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (upload.containsKey("storeFile")) {
+            create("upload") {
+                storeFile = file(upload.getProperty("storeFile"))
+                storePassword = upload.getProperty("storePassword")
+                keyAlias = upload.getProperty("keyAlias")
+                keyPassword = upload.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("upload") ?: signingConfigs.getByName("debug")
         }
     }
 }

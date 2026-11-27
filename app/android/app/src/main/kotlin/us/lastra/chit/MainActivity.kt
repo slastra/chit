@@ -29,14 +29,14 @@ class MainActivity : FlutterActivity() {
             }
         }
         // whether the background catch-up is exempt from battery
-        // optimization, and asking for it (the system's own dialog)
+        // optimization, and the system's list of apps to exempt (asking
+        // directly takes a permission Play keeps for a few kinds of app)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "chit/power").setMethodCallHandler { call, result ->
             val power = getSystemService(PowerManager::class.java)
             when (call.method) {
                 "exempt" -> result.success(power.isIgnoringBatteryOptimizations(packageName))
                 "ask" -> {
-                    @Suppress("BatteryLife")
-                    startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
+                    startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
                     result.success(null)
                 }
                 else -> result.notImplemented()

@@ -18,13 +18,18 @@ const _power = MethodChannel('chit/power');
 
 /// Whether Android leaves the background catch-up alone (no battery
 /// optimization); null where it doesn't apply.
-final _exemptProvider = FutureProvider<bool?>((ref) async {
+final _exemptProvider = FutureProvider.autoDispose<bool?>((ref) async {
   try {
     return await _power.invokeMethod<bool>('exempt');
   } on MissingPluginException {
     return null;
   }
 });
+
+/// Whether reminders can come on the minute; null where it does not apply.
+/// Read afresh each time Settings opens (it is granted in Android's own
+/// settings, away from here).
+final _exactProvider = FutureProvider.autoDispose<bool?>((ref) => exactRemindersAllowed());
 
 /// Settings: the account, labels, and on a phone its notifications. A
 /// dialog on expanded windows, a full-screen one on compact ones.
@@ -106,6 +111,18 @@ class _Settings extends ConsumerWidget {
                   ref.invalidate(_notifyActivityProvider);
                 },
               ),
+              // without it, Android may hold a reminder back a few minutes
+              if (ref.watch(_exactProvider).value case final exact?)
+                ListTile(
+                  leading: const Icon(Icons.alarm_outlined),
+                  title: const Text('Reminders on time'),
+                  subtitle: Text(
+                    exact ? 'Reminders come on the minute' : 'Without this, a reminder can come a few minutes late',
+                  ),
+                  trailing: exact
+                      ? Icon(Icons.check_circle, color: scheme.primary)
+                      : FilledButton.tonal(onPressed: askExactReminders, child: const Text('Allow')),
+                ),
               // battery optimization otherwise stretches the 15-minute
               // catch-up to hours
               if (ref.watch(_exemptProvider).value case final exempt?)
@@ -115,16 +132,13 @@ class _Settings extends ConsumerWidget {
                   subtitle: Text(
                     exempt
                         ? 'chit checks for changes while it is closed'
-                        : 'Let chit check for changes while it is closed',
+                        : 'In Battery, set chit to Unrestricted so it can check while closed',
                   ),
                   trailing: exempt
                       ? Icon(Icons.check_circle, color: scheme.primary)
                       : FilledButton.tonal(
-                          onPressed: () async {
-                            await _power.invokeMethod<void>('ask');
-                            ref.invalidate(_exemptProvider);
-                          },
-                          child: const Text('Allow'),
+                          onPressed: () => _power.invokeMethod<void>('ask'),
+                          child: const Text('Open'),
                         ),
                 ),
             ],

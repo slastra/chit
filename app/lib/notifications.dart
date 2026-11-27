@@ -73,6 +73,18 @@ Future<void> askNotificationPermission() async {
   await _android?.requestNotificationsPermission();
 }
 
+/// Whether reminders can come on the minute (Android's Alarms & reminders
+/// permission, which the person grants in Settings); null where it does
+/// not apply.
+Future<bool?> exactRemindersAllowed() async =>
+    notificationsSupported ? await _android?.canScheduleExactNotifications() : null;
+
+/// Opens Android's Alarms & reminders setting for chit.
+Future<void> askExactReminders() async {
+  if (!notificationsSupported) return;
+  await _android?.requestExactAlarmsPermission();
+}
+
 // ---- reminders -----------------------------------------------------------
 
 NotificationDetails _reminderDetails(String body) => NotificationDetails(

@@ -6,11 +6,10 @@
     <!-- reminders: notifications at their exact time, kept across reboots -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
-    <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32"/>
-    <!-- asking to be left out of battery optimization, so the background
-         catch-up keeps its 15 minutes -->
-    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
+    <!-- reminders on the minute: the person grants it in Settings (Play
+         keeps USE_EXACT_ALARM for alarm clocks and calendars); without it
+         a reminder still comes, a few minutes late at worst -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
     <application
         android:label="chit"
         android:name="${applicationName}"
