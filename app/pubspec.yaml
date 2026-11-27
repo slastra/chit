@@ -1,5 +1,5 @@
 name: chit
-description: "A new Flutter project."
+description: "Notes and shared checklists for a household: offline-first, synced through your own chit server."
 publish_to: 'none'
 version: 0.1.0+2
 
