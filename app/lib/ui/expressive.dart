@@ -1,8 +1,8 @@
 /// Material 3 Expressive components material_ui (1.11) does not ship yet,
 /// built to Compose's tokens (androidx material3/tokens): the loading
 /// indicator, the wavy linear progress indicator, the connected button
-/// group (which replaces the segmented button) and the docked toolbar
-/// (which replaces the bottom app bar).
+/// group (which replaces the segmented button), and the docked and floating
+/// toolbars (which replace the bottom app bar).
 library;
 
 import 'dart:math' as math;
@@ -308,6 +308,47 @@ class DockedToolbar extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(children: children),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---- floating toolbar ----------------------------------------------------------
+
+/// Material's floating toolbar: actions for what is on the page, afloat
+/// over its foot. FloatingToolbarTokens: 64dp tall and fully round, 8dp
+/// inside its ends, 4dp between items, 16dp clear of the window's edges
+/// (the caller's to keep), at elevation level 3. Standard is on surface
+/// container; [vibrant], for a mode that wants notice (a selection), is on
+/// primary container.
+class FloatingToolbar extends StatelessWidget {
+  const FloatingToolbar({super.key, required this.children, this.vibrant = false});
+  final List<Widget> children;
+  final bool vibrant;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final ink = vibrant ? scheme.onPrimaryContainer : scheme.onSurfaceVariant;
+    return Material(
+      color: vibrant ? scheme.primaryContainer : scheme.surfaceContainer,
+      elevation: 3,
+      shadowColor: scheme.shadow,
+      shape: const StadiumBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: IconButtonTheme(
+        data: IconButtonThemeData(style: IconButton.styleFrom(foregroundColor: ink)),
+        child: DefaultTextStyle.merge(
+          style: theme.textTheme.titleMedium?.copyWith(color: vibrant ? scheme.onPrimaryContainer : scheme.onSurface),
+          child: SizedBox(
+            height: 64,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Row(mainAxisSize: MainAxisSize.min, spacing: 4, children: children),
             ),
           ),
         ),

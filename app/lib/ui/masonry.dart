@@ -15,11 +15,20 @@ import 'package:material_ui/material_ui.dart' show Springs;
 /// search, a change from another device, a new column count. A card whose
 /// neighborhood stays the same (one above it growing, say) follows its place
 /// directly instead, so cards never overlap while something changes size.
+///
+/// [overhang] gives each card's box that much of the gap above it and to
+/// its left, for something that hangs off the card's corner (a selection
+/// check) and must still be under the pointer there. The card pads itself
+/// by as much on those two sides, so it is drawn where it always was. The
+/// grid insets its columns by the overhang too, so the first column's
+/// stays inside the grid: callers take it off their own left margin.
 class Masonry extends StatefulWidget {
-  const Masonry({super.key, required this.minColumnWidth, this.spacing = 8, required this.children});
+  const Masonry({super.key, required this.minColumnWidth, this.spacing = 8, this.overhang = 0, required this.children})
+    : assert(overhang <= spacing, 'an overhang past the gap would lie on the next card');
 
   final double minColumnWidth;
   final double spacing;
+  final double overhang;
   final List<Widget> children;
 
   @override
@@ -31,6 +40,7 @@ class _MasonryState extends State<Masonry> with SingleTickerProviderStateMixin {
   Widget build(BuildContext context) => _MasonryLayout(
     minColumnWidth: widget.minColumnWidth,
     spacing: widget.spacing,
+    overhang: widget.overhang,
     vsync: this,
     // no motion asked for, or tickers muted (a route on top): snap
     animate: !MediaQuery.disableAnimationsOf(context) && TickerMode.valuesOf(context).enabled,
@@ -65,6 +75,7 @@ class _MasonryLayout extends MultiChildRenderObjectWidget {
   const _MasonryLayout({
     required this.minColumnWidth,
     required this.spacing,
+    required this.overhang,
     required this.vsync,
     required this.animate,
     super.children,
@@ -72,17 +83,24 @@ class _MasonryLayout extends MultiChildRenderObjectWidget {
 
   final double minColumnWidth;
   final double spacing;
+  final double overhang;
   final TickerProvider vsync;
   final bool animate;
 
   @override
-  RenderMasonry createRenderObject(BuildContext context) =>
-      RenderMasonry(minColumnWidth: minColumnWidth, spacing: spacing, vsync: vsync, animate: animate);
+  RenderMasonry createRenderObject(BuildContext context) => RenderMasonry(
+    minColumnWidth: minColumnWidth,
+    spacing: spacing,
+    overhang: overhang,
+    vsync: vsync,
+    animate: animate,
+  );
 
   @override
   void updateRenderObject(BuildContext context, RenderMasonry renderObject) => renderObject
     ..minColumnWidth = minColumnWidth
     ..spacing = spacing
+    ..overhang = overhang
     ..vsync = vsync
     ..animate = animate;
 }
@@ -138,7 +156,13 @@ List<Rect> placeMasonry(List<MasonryBox> boxes, int columns, double colWidth, do
 class RenderMasonry extends RenderBox
     with ContainerRenderObjectMixin<RenderBox, MasonryData>, RenderBoxContainerDefaultsMixin<RenderBox, MasonryData> {
   // private named parameters: callers still write minColumnWidth: and so on
-  RenderMasonry({required this._minColumnWidth, required this._spacing, required this._vsync, required this._animate});
+  RenderMasonry({
+    required this._minColumnWidth,
+    required this._spacing,
+    this._overhang = 0,
+    required this._vsync,
+    required this._animate,
+  });
 
   double _minColumnWidth;
   set minColumnWidth(double v) {
@@ -152,6 +176,14 @@ class RenderMasonry extends RenderBox
   set spacing(double v) {
     if (v == _spacing) return;
     _spacing = v;
+    markNeedsLayout();
+  }
+
+  /// How far a card's box reaches into the gap above and left of the card.
+  double _overhang;
+  set overhang(double v) {
+    if (v == _overhang) return;
+    _overhang = v;
     markNeedsLayout();
   }
 
@@ -177,10 +209,21 @@ class RenderMasonry extends RenderBox
   double _width = -1;
 
   /// How many columns fit [width].
-  int columnsFor(double width) => math.max(1, ((width + _spacing) / (_minColumnWidth + _spacing)).floor());
+  int columnsFor(double width) => math.max(1, ((width - _overhang + _spacing) / (_minColumnWidth + _spacing)).floor());
 
   int get columns => _columns;
-  double get columnWidth => (_width - _spacing * (_columns - 1)) / _columns;
+  double get columnWidth => (_width - _overhang - _spacing * (_columns - 1)) / _columns;
+
+  /// What the layout places for [c]: the card itself, without its overhang.
+  MasonryBox _boxOf(RenderBox c) {
+    final span = (c.parentData! as MasonryData).span;
+    return (height: span ? c.size.height : c.size.height - _overhang, span: span);
+  }
+
+  /// Where [boxes] rest in this grid, the columns inset by the overhang.
+  List<Rect> _place(List<MasonryBox> boxes) => [
+    for (final r in placeMasonry(boxes, _columns, columnWidth, _spacing)) r.shift(Offset(_overhang, 0)),
+  ];
 
   @override
   bool get isRepaintBoundary => true;
@@ -199,19 +242,21 @@ class RenderMasonry extends RenderBox
   }
 
   /// Every child's resting place, in order: for finding where a pointer is
-  /// without chasing cards that are still moving.
+  /// without chasing cards that are still moving. A card's is the card as
+  /// drawn, not its box with the overhang.
   List<({RenderBox box, MasonryData data, Rect target})> get targets => [
-    for (final c in _children)
-      (box: c, data: c.parentData! as MasonryData, target: (c.parentData! as MasonryData).target & c.size),
+    for (final c in _children) (box: c, data: c.parentData! as MasonryData, target: _restOf(c)),
   ];
 
+  Rect _restOf(RenderBox c) {
+    final d = c.parentData! as MasonryData;
+    if (d.span) return d.target & c.size;
+    final e = Offset(_overhang, _overhang);
+    return (d.target + e) & (c.size - e as Size);
+  }
+
   /// Where the children would rest in [order] (boxes of this grid).
-  List<Rect> preview(List<RenderBox> order) => placeMasonry(
-    [for (final c in order) (height: c.size.height, span: (c.parentData! as MasonryData).span)],
-    _columns,
-    columnWidth,
-    _spacing,
-  );
+  List<Rect> preview(List<RenderBox> order) => _place([for (final c in order) _boxOf(c)]);
 
   @override
   void performLayout() {
@@ -225,16 +270,12 @@ class RenderMasonry extends RenderBox
     final colWidth = columnWidth;
 
     final kids = _children.toList();
+    final e = _overhang;
     for (final c in kids) {
       final span = (c.parentData! as MasonryData).span;
-      c.layout(BoxConstraints.tightFor(width: span ? width : colWidth), parentUsesSize: true);
+      c.layout(BoxConstraints.tightFor(width: span ? width - e : colWidth + e), parentUsesSize: true);
     }
-    final rects = placeMasonry(
-      [for (final c in kids) (height: c.size.height, span: (c.parentData! as MasonryData).span)],
-      columns,
-      colWidth,
-      _spacing,
-    );
+    final rects = _place([for (final c in kids) _boxOf(c)]);
 
     // who is above whom, per column, in the new layout
     final lastIn = <int, RenderBox>{};
@@ -243,12 +284,13 @@ class RenderMasonry extends RenderBox
       final d = c.parentData! as MasonryData;
       final r = rects[i];
       bottom = math.max(bottom, r.bottom);
-      final col = d.span ? -1 : (r.left / (colWidth + _spacing)).round();
+      final col = d.span ? -1 : ((r.left - e) / (colWidth + _spacing)).round();
       final above = d.span ? null : lastIn[col];
       if (!d.span) lastIn[col] = c;
       if (d.span) lastIn.clear();
 
-      final to = r.topLeft;
+      // a card's box starts up and left of the card, by the overhang
+      final to = d.span ? r.topLeft : r.topLeft - Offset(e, e);
       if (!d.placed || snap) {
         // new here, or no motion: straight to its place
         d

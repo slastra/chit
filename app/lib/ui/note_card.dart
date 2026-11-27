@@ -32,6 +32,7 @@ class NoteCard extends ConsumerStatefulWidget {
     this.selecting = false,
     this.onSelect,
     this.longPressSelects = false,
+    this.overhang = 0,
   });
 
   final Note note;
@@ -45,14 +46,19 @@ class NoteCard extends ConsumerStatefulWidget {
 
   /// Selection on the board: whether this card is selected, whether any
   /// is (a tap then selects rather than opens), and how to toggle it.
-  /// Ctrl- or Shift-click toggles too, and the check at the card's top end
-  /// (shown on hover, and on every card while selecting).
+  /// Ctrl- or Shift-click toggles too, and the check on the card's top
+  /// start corner (shown on the selected cards, and under the mouse).
   final bool selected;
   final bool selecting;
   final VoidCallback? onSelect;
 
   /// A long press selects (where it doesn't lift the card for a drag).
   final bool longPressSelects;
+
+  /// Room above and to the start of the card, inside this widget's box,
+  /// for the selection check that sits on the card's corner (the grid's
+  /// [Masonry.overhang]).
+  final double overhang;
 
   @override
   ConsumerState<NoteCard> createState() => _NoteCardState();
@@ -270,8 +276,8 @@ class _NoteCardState extends ConsumerState<NoteCard> {
     final corners = theme.cardTheme.shape is RoundedRectangleBorder
         ? (theme.cardTheme.shape! as RoundedRectangleBorder).borderRadius
         : const BorderRadius.all(Radius.circular(12));
-    // selected: a 2dp primary outline and a filled check at the top end (a
-    // checked card, as Material's checkable card draws it)
+    // selected: a 2dp primary outline, and a check on the card's top start
+    // corner, half off the card (as Keep draws it)
     final selected = widget.selected;
     final selectedSide = BorderSide(color: theme.colorScheme.primary, width: 2);
     final plain = scheme == null
@@ -288,28 +294,40 @@ class _NoteCardState extends ConsumerState<NoteCard> {
             shape: RoundedRectangleBorder(borderRadius: corners, side: selected ? selectedSide : BorderSide.none),
             child: body,
           );
-    final showCheck = select != null && (selected || widget.selecting || _hover);
-    final card = select == null
+    // the check shows on the selected cards, and under the mouse (where a
+    // click on it starts or adds to a selection); a touch selects by a long
+    // press, then by a tap anywhere on a card
+    final showCheck = select != null && (selected || _hover);
+    final e = widget.overhang;
+    final padded = e == 0
         ? plain
+        : Padding(
+            padding: EdgeInsetsDirectional.only(top: e, start: e),
+            child: plain,
+          );
+    final card = select == null
+        ? padded
         : MouseRegion(
             onEnter: (_) => setState(() => _hover = true),
             onExit: (_) => setState(() => _hover = false),
             child: Stack(
+              clipBehavior: Clip.none,
               children: [
-                plain,
-                if (showCheck)
-                  PositionedDirectional(
-                    top: 4,
-                    end: 4,
-                    child: IconButton(
-                      tooltip: selected ? 'Deselect note' : 'Select note',
-                      isSelected: selected,
-                      onPressed: select,
-                      color: selected ? theme.colorScheme.primary : faint,
-                      icon: const Icon(Icons.radio_button_unchecked),
-                      selectedIcon: const Icon(Icons.check_circle),
-                    ),
+                padded,
+                // centered 4dp inside the corner: 8dp of its 24 hang off
+                PositionedDirectional(
+                  top: e + 4 - _SelectCheck.extent / 2,
+                  start: e + 4 - _SelectCheck.extent / 2,
+                  child: AnimatedSwitcher(
+                    duration: Durations.short3,
+                    switchInCurve: Easing.emphasizedDecelerate,
+                    switchOutCurve: Easing.emphasizedAccelerate,
+                    transitionBuilder: (child, a) => ScaleTransition(scale: a, child: child),
+                    child: showCheck
+                        ? _SelectCheck(selected: selected, onTap: select)
+                        : const SizedBox.square(dimension: _SelectCheck.extent),
                   ),
+                ),
               ],
             ),
           );
@@ -576,6 +594,56 @@ class _Sharers extends ConsumerWidget {
           ),
           if (ids.length > 3) Text('+${ids.length - 3}', style: Theme.of(context).textTheme.labelMedium),
         ],
+      ),
+    );
+  }
+}
+
+/// The selection check on a card's corner: a 24dp disc with a check, ringed
+/// in the page's surface so it parts from the card's outline. Primary when
+/// its card is selected; a quiet tone when it only offers to select.
+class _SelectCheck extends StatelessWidget {
+  const _SelectCheck({required this.selected, required this.onTap});
+  final bool selected;
+  final VoidCallback onTap;
+
+  /// The disc and its 2dp ring.
+  static const extent = 28.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: selected ? 'Deselect note' : 'Select note',
+      child: Semantics(
+        button: true,
+        checked: selected,
+        label: selected ? 'Deselect note' : 'Select note',
+        excludeSemantics: true,
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onTap,
+            child: Container(
+              width: extent,
+              height: extent,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(shape: BoxShape.circle, color: scheme.surface),
+              child: AnimatedContainer(
+                duration: Durations.short3,
+                curve: Easing.standard,
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: selected ? scheme.primary : scheme.surfaceContainerHighest,
+                ),
+                child: Icon(Icons.check, size: 16, color: selected ? scheme.onPrimary : scheme.onSurfaceVariant),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

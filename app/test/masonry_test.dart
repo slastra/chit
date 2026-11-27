@@ -113,4 +113,51 @@ void main() {
     expect(t.getSize(find.text('H')).width, 400);
     expect(at(t, 'a'), const Offset(0, 30));
   });
+
+  testWidgets("an overhang gives a card's box the gap above and left of it", (t) async {
+    // 410 wide, 10 of it the overhang: two 194-wide columns, 12 apart
+    Widget cell(String id, double height) => MasonryChild(
+      key: ValueKey(id),
+      tag: id,
+      span: id == 'H',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => tapped.add(id),
+        child: SizedBox(height: height),
+      ),
+    );
+    await t.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: Align(
+          alignment: Alignment.topLeft,
+          child: SizedBox(
+            width: 410,
+            child: Masonry(
+              minColumnWidth: 180,
+              spacing: 12,
+              overhang: 10,
+              // cards are 100 tall, in boxes 10 taller
+              children: [cell('H', 30), cell('a', 110), cell('b', 110), cell('c', 110)],
+            ),
+          ),
+        ),
+      ),
+    );
+    final grid = t.renderObject<RenderMasonry>(find.byType(Masonry));
+    final rest = {for (final x in grid.targets) x.data.tag: x.target};
+    // where the cards are drawn: inset by the overhang, as if it were margin
+    expect(rest['H'], const Rect.fromLTWH(10, 0, 400, 30));
+    expect(rest['a'], const Rect.fromLTWH(10, 30, 194, 100));
+    expect(rest['b'], const Rect.fromLTWH(216, 30, 194, 100));
+    expect(rest['c'], const Rect.fromLTWH(10, 142, 194, 100));
+    // the boxes reach up and left of that, into the gaps
+    expect(t.getRect(find.byKey(const ValueKey('b'))), const Rect.fromLTWH(206, 20, 204, 110));
+    // so a tap just off a card's corner is the card's (the first column's too)
+    await t.tapAt(const Offset(208, 60));
+    await t.tapAt(const Offset(2, 150));
+    // and a drag preview places the same cards
+    expect(tapped, ['b', 'c']);
+    expect(grid.preview([for (final x in grid.targets) x.box]).last, rest['c']);
+  });
 }

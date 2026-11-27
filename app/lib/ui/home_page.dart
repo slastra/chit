@@ -331,8 +331,12 @@ class _HomePageState extends ConsumerState<HomePage> {
         !expandedRail &&
         _selected.isEmpty &&
         (_shelf == Shelf.notes || _shelf == Shelf.reminders || _shelf == Shelf.labeled);
-    // snackbars float above the compact FAB (56dp and its 16dp margin)
-    snackbarClearance.value = showFab ? 56 + 16 : 0;
+    // snackbars float above the FAB (56dp and its 16dp margin), or the
+    // selection toolbar that takes its place (64dp)
+    snackbarClearance.value = _selected.isNotEmpty ? 64 + 16 : (showFab ? 56 + 16 : 0);
+    // the pane beside the rail: what the selection toolbar centers in
+    final railWidth = compact ? 0.0 : (expandedRail ? NavRail.expandedWidth : NavRail.collapsedWidth);
+    final paneWidth = MediaQuery.sizeOf(context).width - railWidth;
 
     // Material 3 section headers: title-small, sentence case
     Widget section(String label, String tag) => MasonryChild(
@@ -351,7 +355,9 @@ class _HomePageState extends ConsumerState<HomePage> {
       child: RepaintBoundary(
         child: _Placeable(
           hidden: _drag.id == n.id,
+          overhang: _checkOverhang,
           child: NoteCard(
+            overhang: _checkOverhang,
             note: n,
             library: lib,
             onMove: canDrag ? (by) => _moveBy(n.id, by: by) : null,
@@ -380,6 +386,7 @@ class _HomePageState extends ConsumerState<HomePage> {
         key: _gridKey,
         minColumnWidth: wide ? 240 : 160,
         spacing: 12,
+        overhang: _checkOverhang,
         children: [
           if (showPinned) section(split.first, pinnedHeader),
           // nothing else pinned: somewhere to drop a note to pin it. It
@@ -409,63 +416,56 @@ class _HomePageState extends ConsumerState<HomePage> {
     final content = CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
-        if (selected.isNotEmpty)
-          // a selection: the contextual top app bar, close, count, actions
-          SliverAppBar(
-            pinned: true,
-            toolbarHeight: 64,
-            backgroundColor: theme.colorScheme.surfaceContainer,
-            leading: IconButton(tooltip: 'Clear selection', icon: const Icon(Icons.close), onPressed: _clearSelection),
-            title: Text('${selected.length} selected'),
-            actions: [..._selectionActions(lib, selected.toList(), shown, wide), const SizedBox(width: 4)],
-          )
-        else
-          SliverAppBar(
-            floating: true,
-            snap: true,
-            toolbarHeight: 72,
-            titleSpacing: margin,
-            automaticallyImplyLeading: false,
-            centerTitle: true,
-            title: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 720),
-              child: SearchBar(
-                hintText: switch (_shelf) {
-                  Shelf.notes => 'Search your notes',
-                  Shelf.labeled => 'Search ${lib.labels.where((l) => l.id == _label).firstOrNull?.name ?? 'label'}',
-                  _ => 'Search ${_shelf.label.toLowerCase()}',
-                },
-                elevation: const WidgetStatePropertyAll(0),
-                leading: !compact
-                    ? Padding(
-                        padding: const EdgeInsets.all(8),
-                        child: Icon(Icons.search, color: theme.colorScheme.onSurface),
-                      )
-                    : IconButton(
-                        icon: const Icon(Icons.menu),
-                        tooltip: 'Open navigation',
-                        onPressed: () => _scaffold.currentState?.openDrawer(),
-                      ),
-                trailing: const [_SyncMark(), _Account()],
-                onChanged: (v) => setState(() => _query = v),
-              ),
+        SliverAppBar(
+          floating: true,
+          snap: true,
+          toolbarHeight: 72,
+          titleSpacing: margin,
+          automaticallyImplyLeading: false,
+          centerTitle: true,
+          title: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: SearchBar(
+              hintText: switch (_shelf) {
+                Shelf.notes => 'Search your notes',
+                Shelf.labeled => 'Search ${lib.labels.where((l) => l.id == _label).firstOrNull?.name ?? 'label'}',
+                _ => 'Search ${_shelf.label.toLowerCase()}',
+              },
+              elevation: const WidgetStatePropertyAll(0),
+              leading: !compact
+                  ? Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Icon(Icons.search, color: theme.colorScheme.onSurface),
+                    )
+                  : IconButton(
+                      icon: const Icon(Icons.menu),
+                      tooltip: 'Open navigation',
+                      onPressed: () => _scaffold.currentState?.openDrawer(),
+                    ),
+              trailing: const [_SyncMark(), _Account()],
+              onChanged: (v) => setState(() => _query = v),
             ),
           ),
+        ),
         SliverPadding(
-          padding: EdgeInsets.fromLTRB(margin, 0, margin, 120),
+          // the grid insets its own columns by the check's overhang
+          padding: EdgeInsets.fromLTRB(margin - _checkOverhang, 0, margin, 120),
           // centered and capped, so a very wide screen keeps the grid together
           sliver: SliverToBoxAdapter(
             child: Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 1600),
                 child: shown.isEmpty
-                    ? (firstSync
-                          // the first load: Material's loading indicator, where the notes will be
-                          ? const Padding(
-                              padding: EdgeInsets.only(top: 120),
-                              child: Center(child: LoadingIndicator(contained: true)),
-                            )
-                          : _Empty(shelf: _shelf, searching: _query.trim().isNotEmpty))
+                    ? Padding(
+                        padding: const EdgeInsets.only(left: _checkOverhang),
+                        child: firstSync
+                            // the first load: Material's loading indicator, where the notes will be
+                            ? const Padding(
+                                padding: EdgeInsets.only(top: 120),
+                                child: Center(child: LoadingIndicator(contained: true)),
+                              )
+                            : _Empty(shelf: _shelf, searching: _query.trim().isNotEmpty),
+                      )
                     : grid,
               ),
             ),
@@ -519,8 +519,17 @@ class _HomePageState extends ConsumerState<HomePage> {
         ),
       ),
       // The FAB menu (Note, List, Link, Image), except beside the expanded
-      // rail, which has the split button at its foot.
-      floatingActionButton: showFab ? const NewNoteFabMenu() : null,
+      // rail, which has the split button at its foot. A selection puts its
+      // toolbar in the FAB's place: the FAB shrinks away and the toolbar
+      // grows in at the pane's center, on the scaffold's own FAB motion, so
+      // snackbars and the mini player clear it as they clear the FAB.
+      floatingActionButton: selected.isNotEmpty
+          ? KeyedSubtree(
+              key: const ValueKey('selection'),
+              child: _selectionBar(lib, selected.toList(), shown, paneWidth - 32),
+            )
+          : (showFab ? const NewNoteFabMenu() : null),
+      floatingActionButtonLocation: selected.isNotEmpty ? _PaneCenterFloat(railWidth) : null,
     );
     // Back closes the modal rail, then clears the selection; while
     // selecting, Escape clears it too and Ctrl+A takes every note shown
@@ -567,9 +576,31 @@ class _HomePageState extends ConsumerState<HomePage> {
   Op _op(String collection, String id, String field, Object? value) =>
       ref.read(engineProvider)!.op(collection, id, field, value);
 
-  /// The contextual bar's actions for [ids]. Compact windows keep three
-  /// in the bar (Material's top app bar limit) and the rest under More.
-  List<Widget> _selectionActions(Library lib, List<String> ids, List<Note> shown, bool wide) {
+  /// The selection's toolbar, afloat at the foot of the pane: close, how
+  /// many, and the actions for [ids]. It has [room] to fit in: with less,
+  /// the count is the number alone, then color, then the reminder move
+  /// under More.
+  Widget _selectionBar(Library lib, List<String> ids, List<Note> shown, double room) {
+    // a button and its gap; the count; the bar's own padding
+    const button = 52.0;
+    final words = room >= 7 * button + 96 + 16;
+    final fits = ((room - 16 - (words ? 96 : 36)) / button).floor();
+    final n = ids.length;
+    return FloatingToolbar(
+      vibrant: true,
+      children: [
+        IconButton(tooltip: 'Clear selection', icon: const Icon(Icons.close), onPressed: _clearSelection),
+        Padding(
+          padding: const EdgeInsetsDirectional.only(start: 4, end: 12),
+          child: Text(words ? '$n selected' : '$n', semanticsLabel: '$n selected'),
+        ),
+        ..._selectionActions(lib, ids, shown, fits - 1),
+      ],
+    );
+  }
+
+  /// The toolbar's actions for [ids], in at most [fits] buttons.
+  List<Widget> _selectionActions(Library lib, List<String> ids, List<Note> shown, int fits) {
     if (ref.read(engineProvider) == null) return const [];
     final me = ref.read(sessionProvider).value?.user.id ?? '';
     final notes = [for (final id in ids) lib.notes.firstWhere((n) => n.id == id)];
@@ -682,13 +713,6 @@ class _HomePageState extends ConsumerState<HomePage> {
       selectedIcon: const Icon(Icons.unarchive_outlined),
       onPressed: archive,
     );
-    MenuItemButton trashItem() =>
-        MenuItemButton(leadingIcon: const Icon(Icons.delete_outline), onPressed: trash, child: const Text('Delete'));
-    MenuItemButton selectAllItem() => MenuItemButton(
-      leadingIcon: const Icon(Icons.select_all),
-      onPressed: () => setState(() => _selected.addAll(shown.map((x) => x.id))),
-      child: const Text('Select all'),
-    );
     Widget more(List<Widget> items) => MenuAnchor(
       builder: (context, ctl, _) => IconButton(
         tooltip: 'More options',
@@ -698,36 +722,61 @@ class _HomePageState extends ConsumerState<HomePage> {
       menuChildren: items,
     );
 
-    if (wide) {
-      return [
-        pinButton,
-        ReminderButton(current: null, onSet: remind, onClear: () => remind(null)),
-        ColorButton(current: color, onPick: setColor),
-        labelButton,
-        archiveButton,
-        more([trashItem(), selectAllItem()]),
-      ];
-    }
+    // pin, remind, color, labels, archive, More
+    final showColor = fits >= 6;
+    final showRemind = fits >= 5;
     return [
       pinButton,
+      if (showRemind) ReminderButton(current: null, onSet: remind, onClear: () => remind(null)),
+      if (showColor) ColorButton(current: color, onPick: setColor),
       labelButton,
       archiveButton,
       more([
+        if (!showRemind)
+          MenuItemButton(
+            leadingIcon: const Icon(Icons.add_alarm_outlined),
+            onPressed: () => showReminderSheet(context, current: null, onSet: remind, onClear: () => remind(null)),
+            child: const Text('Remind me'),
+          ),
+        if (!showColor)
+          MenuItemButton(
+            leadingIcon: const Icon(Icons.palette_outlined),
+            onPressed: () => showColorSheet(context, current: color, onPick: setColor),
+            child: const Text('Background color'),
+          ),
+        MenuItemButton(leadingIcon: const Icon(Icons.delete_outline), onPressed: trash, child: const Text('Delete')),
         MenuItemButton(
-          leadingIcon: const Icon(Icons.add_alarm_outlined),
-          onPressed: () => showReminderSheet(context, current: null, onSet: remind, onClear: () => remind(null)),
-          child: const Text('Remind me'),
+          leadingIcon: const Icon(Icons.select_all),
+          onPressed: () => setState(() => _selected.addAll(shown.map((x) => x.id))),
+          child: const Text('Select all'),
         ),
-        MenuItemButton(
-          leadingIcon: const Icon(Icons.palette_outlined),
-          onPressed: () => showColorSheet(context, current: color, onPick: setColor),
-          child: const Text('Background color'),
-        ),
-        trashItem(),
-        selectAllItem(),
       ]),
     ];
   }
+}
+
+/// How far the selection check hangs off a card's corner, into the grid's
+/// gap: room the grid gives each card's box so the check is under the
+/// pointer there.
+const _checkOverhang = 10.0;
+
+/// The FAB slot's place for the selection toolbar: afloat at the foot,
+/// centered in the pane beside a rail [start] wide.
+class _PaneCenterFloat extends StandardFabLocation with FabCenterOffsetX, FabFloatOffsetY {
+  const _PaneCenterFloat(this.start);
+  final double start;
+
+  @override
+  double getOffsetX(ScaffoldPrelayoutGeometry scaffoldGeometry, double adjustment) {
+    final x = super.getOffsetX(scaffoldGeometry, adjustment);
+    return scaffoldGeometry.textDirection == TextDirection.rtl ? x - start / 2 : x + start / 2;
+  }
+
+  @override
+  bool operator ==(Object other) => other is _PaneCenterFloat && other.start == start;
+
+  @override
+  int get hashCode => start.hashCode;
 }
 
 /// The account: an avatar in the search bar, with the account and sign-out
@@ -923,8 +972,11 @@ bool _same(List<String> a, List<String> b) {
 /// A card that may be out on a drag: kept in the tree (its state, its
 /// pending checks) but unseen, with its slot drawn in its place.
 class _Placeable extends StatelessWidget {
-  const _Placeable({required this.hidden, required this.child});
+  const _Placeable({required this.hidden, required this.overhang, required this.child});
   final bool hidden;
+
+  /// The child's box starts this far up and left of its card.
+  final double overhang;
   final Widget child;
 
   @override
@@ -935,6 +987,8 @@ class _Placeable extends StatelessWidget {
     return Stack(
       children: [
         Positioned.fill(
+          top: overhang,
+          left: overhang,
           child: AnimatedOpacity(
             opacity: hidden ? 1 : 0,
             duration: Durations.short2,
