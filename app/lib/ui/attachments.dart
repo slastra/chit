@@ -327,12 +327,21 @@ final class MediaDeck {
     if (current.value == id) unawaited(player.pause());
   }
 
+  /// Counts the starts, so a slow one overtaken by another (or by [stop])
+  /// leaves the newer one's state alone.
+  int _turn = 0;
+
   Future<void> toggle(Attachment a, Media media) async {
     if (current.value == a.id) {
-      await player.playOrPause();
+      // nothing to pause while it is still being fetched: the player would
+      // report playing with nothing loaded
+      if (loading.value == null) await player.playOrPause();
       return;
     }
+    final turn = ++_turn;
     if (a.kind == MediaKind.video) video; // the picture needs its surface first
+    // what played before stops now, not when the new one has arrived
+    if (player.state.playing) unawaited(player.pause());
     current.value = a.id;
     loading.value = 0;
     try {
@@ -340,20 +349,32 @@ final class MediaDeck {
       if (a.pending) {
         source = a.local;
       } else if (files.hasFiles) {
-        source = (await media.file(a, onProgress: (f) => loading.value = f))!;
+        source = (await media.file(
+          a,
+          onProgress: (f) {
+            if (turn == _turn) loading.value = f;
+          },
+        ))!;
       } else {
         source = (await media.url(a)).toString();
       }
-      if (current.value != a.id) return; // another started meanwhile
+      if (turn != _turn) return; // another started meanwhile
       await player.open(mk.Media(source));
+    } catch (_) {
+      if (turn == _turn) {
+        current.value = null;
+        showMessage('Could not play ${a.name}');
+      }
     } finally {
-      loading.value = null;
+      if (turn == _turn) loading.value = null;
     }
   }
 
   /// Stops and unloads whatever is playing (the mini player's close).
   Future<void> stop() async {
+    _turn++;
     current.value = null;
+    loading.value = null;
     await player.stop();
   }
 

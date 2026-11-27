@@ -172,39 +172,42 @@ class _InlineVideoState extends ConsumerState<InlineVideo> {
           if (!mine) {
             // not started: a tile in the card's highest surface tone, which
             // reads as a tile on any background
+            // the button in the room above the caption, never under it; on
+            // a tile too short for both at full size, the button steps down
             return ColoredBox(
               color: scheme.surfaceContainerHighest,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  Center(
-                    child: IconButton.filled(
-                      tooltip: 'Play ${a.name}',
-                      style: iconButtonSize(56, 24),
-                      onPressed: () => togglePlayback(ref, a),
-                      icon: const Icon(Icons.play_arrow_rounded),
-                    ),
-                  ),
-                  Positioned(
-                    left: 12,
-                    right: 12,
-                    bottom: 8,
-                    child: Row(
-                      children: [
-                        Icon(Icons.movie_outlined, size: 16, color: scheme.onSurfaceVariant),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            a.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.labelMedium?.copyWith(color: scheme.onSurfaceVariant),
-                          ),
+              child: LayoutBuilder(
+                builder: (context, box) => Column(
+                  children: [
+                    Expanded(
+                      child: Center(
+                        child: IconButton.filled(
+                          tooltip: 'Play ${a.name}',
+                          style: box.maxHeight < 104 ? iconButtonSize(40, 24) : iconButtonSize(56, 24),
+                          onPressed: () => togglePlayback(ref, a),
+                          icon: const Icon(Icons.play_arrow_rounded),
                         ),
-                      ],
+                      ),
                     ),
-                  ),
-                ],
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                      child: Row(
+                        children: [
+                          Icon(Icons.movie_outlined, size: 16, color: scheme.onSurfaceVariant),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              a.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.labelMedium?.copyWith(color: scheme.onSurfaceVariant),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             );
           }
@@ -214,18 +217,27 @@ class _InlineVideoState extends ConsumerState<InlineVideo> {
               fit: StackFit.expand,
               children: [
                 GestureDetector(
-                  onTap: deck.player.playOrPause,
+                  onTap: () => togglePlayback(ref, a),
                   child: Video(controller: deck.video, controls: NoVideoControls, fill: Colors.black),
                 ),
-                if (!playing)
-                  Center(
-                    child: IconButton.filled(
-                      tooltip: 'Play',
-                      style: iconButtonSize(56, 24),
-                      onPressed: deck.player.play,
-                      icon: const Icon(Icons.play_arrow_rounded),
-                    ),
-                  ),
+                // while it is fetched, the loading indicator stands where
+                // the play button was: a play button there reads as a
+                // missed tap, and has nothing to play yet
+                ValueListenableBuilder(
+                  valueListenable: deck.loading,
+                  builder: (context, loading, _) => loading != null
+                      ? const Center(child: LoadingIndicator(contained: true))
+                      : playing
+                      ? const SizedBox.shrink()
+                      : Center(
+                          child: IconButton.filled(
+                            tooltip: 'Play',
+                            style: iconButtonSize(56, 24),
+                            onPressed: () => togglePlayback(ref, a),
+                            icon: const Icon(Icons.play_arrow_rounded),
+                          ),
+                        ),
+                ),
                 // bottom end, clear of the card's selection check, on a scrim
                 // so it shows over any picture
                 Positioned(
@@ -350,17 +362,6 @@ class _VideoViewState extends ConsumerState<VideoView> {
               fit: StackFit.expand,
               children: [
                 if (mine) Video(controller: deck.video, controls: NoVideoControls, fill: Colors.black),
-                ValueListenableBuilder(
-                  valueListenable: deck.loading,
-                  builder: (context, loading, _) => loading == null
-                      ? const SizedBox.shrink()
-                      : Center(
-                          child: SizedBox(
-                            width: 200,
-                            child: LinearProgressIndicator(value: loading == 0 ? null : loading),
-                          ),
-                        ),
-                ),
                 IgnorePointer(
                   ignoring: !_shown,
                   child: AnimatedOpacity(
@@ -382,11 +383,18 @@ class _VideoViewState extends ConsumerState<VideoView> {
                                 onPressed: mine ? () => _skip(-10) : null,
                                 icon: const Icon(Icons.replay_10_rounded),
                               ),
-                              IconButton.filled(
-                                tooltip: playing ? 'Pause' : 'Play',
-                                style: iconButtonSize(96, 32),
-                                onPressed: () => togglePlayback(ref, a),
-                                icon: Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded),
+                              // while it is fetched, the loading indicator
+                              // in the play button's place
+                              ValueListenableBuilder(
+                                valueListenable: deck.loading,
+                                builder: (context, loading, _) => mine && loading != null
+                                    ? const LoadingIndicator(size: 96, contained: true)
+                                    : IconButton.filled(
+                                        tooltip: playing ? 'Pause' : 'Play',
+                                        style: iconButtonSize(96, 32),
+                                        onPressed: () => togglePlayback(ref, a),
+                                        icon: Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded),
+                                      ),
                               ),
                               IconButton(
                                 tooltip: 'Forward 10 seconds',
@@ -414,9 +422,21 @@ class _VideoViewState extends ConsumerState<VideoView> {
                               top: false,
                               child: Padding(
                                 padding: const EdgeInsets.fromLTRB(16, 32, 16, 8),
-                                child: mine
-                                    ? SeekBar(player: deck.player, color: Colors.white)
-                                    : const SizedBox(height: 48),
+                                // how far the fetch is, where the seek bar
+                                // will be
+                                child: ValueListenableBuilder(
+                                  valueListenable: deck.loading,
+                                  builder: (context, loading, _) => !mine
+                                      ? const SizedBox(height: 48)
+                                      : loading != null
+                                      ? SizedBox(
+                                          height: 48,
+                                          child: Center(
+                                            child: LinearProgressIndicator(value: loading == 0 ? null : loading),
+                                          ),
+                                        )
+                                      : SeekBar(player: deck.player, color: Colors.white),
+                                ),
                               ),
                             ),
                           ),

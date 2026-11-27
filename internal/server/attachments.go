@@ -68,6 +68,15 @@ func attach(app core.App, me *core.Record, device, noteID, id string, f *filesys
 	return &out, seq, err
 }
 
+// audioOnly are the extensions that name the sound-only use of a container
+// video shares: the bytes say "MP4" (or WebM, or Ogg), the name says which.
+var audioOnly = map[string]string{
+	".m4a":  "audio/mp4",
+	".weba": "audio/webm",
+	".oga":  "audio/ogg",
+	".opus": "audio/ogg",
+}
+
 // contentType sniffs the file, falling back to its extension when the bytes
 // alone are ambiguous.
 func contentType(f *filesystem.File) string {
@@ -78,8 +87,21 @@ func contentType(f *filesystem.File) string {
 		r.Close()
 		sniffed = http.DetectContentType(buf[:n])
 	}
+	return refineType(sniffed, f.OriginalName)
+}
+
+// refineType settles what a sniff leaves open, by the file's name.
+func refineType(sniffed, name string) string {
+	ext := strings.ToLower(filepath.Ext(name))
+	// a voice memo is AAC in an MP4 container, which sniffs as video
+	if audio, ok := audioOnly[ext]; ok {
+		switch sniffed {
+		case "video/mp4", "video/webm", "application/ogg":
+			return audio
+		}
+	}
 	if sniffed == "application/octet-stream" || strings.HasPrefix(sniffed, "text/plain") {
-		if byExt := mime.TypeByExtension(strings.ToLower(filepath.Ext(f.OriginalName))); byExt != "" {
+		if byExt := mime.TypeByExtension(ext); byExt != "" {
 			return byExt
 		}
 	}

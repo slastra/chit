@@ -137,6 +137,10 @@ void main() {
       // a sniff that came back generic falls back to the extension
       expect(MediaKind.of('application/octet-stream', 'Voice memo.m4a'), MediaKind.audio);
       expect(MediaKind.of('application/octet-stream', 'clip.MOV'), MediaKind.video);
+      // AAC in MP4 sniffs as video; the name settles it
+      expect(MediaKind.of('video/mp4', 'Voice memo, Nov 26 14.29.m4a'), MediaKind.audio);
+      expect(MediaKind.of('video/webm', 'memo.weba'), MediaKind.audio);
+      expect(MediaKind.of('video/mp4', 'clip.mp4'), MediaKind.video);
       expect(MediaKind.of('image/svg+xml', 'logo.svg'), MediaKind.other);
       expect(MediaKind.of('text/plain', 'notes.txt'), MediaKind.other);
       expect(guessType('Scan.PDF'), 'application/pdf');

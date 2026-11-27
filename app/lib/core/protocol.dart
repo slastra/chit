@@ -216,11 +216,17 @@ enum MediaKind {
 
   static MediaKind of(String type, String name) {
     final t = type.toLowerCase();
+    final ext = name.contains('.') ? name.split('.').last.toLowerCase() : '';
     if (t.startsWith('image/') && t != 'image/svg+xml') return image;
+    // a voice memo is AAC in an MP4 container, which sniffs as video: the
+    // name says it is the sound-only use of a container video shares
+    if ((t == 'video/mp4' || t == 'video/webm' || t == 'application/ogg') &&
+        const {'m4a', 'weba', 'oga', 'opus'}.contains(ext)) {
+      return audio;
+    }
     if (t.startsWith('video/')) return video;
     if (t.startsWith('audio/')) return audio;
     if (t == 'application/pdf') return pdf;
-    final ext = name.contains('.') ? name.split('.').last.toLowerCase() : '';
     return switch (ext) {
       'jpg' || 'jpeg' || 'png' || 'gif' || 'webp' || 'heic' || 'avif' || 'bmp' => image,
       'mp4' || 'mov' || 'm4v' || 'webm' || 'mkv' || 'avi' || '3gp' => video,
