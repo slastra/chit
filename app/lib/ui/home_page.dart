@@ -534,7 +534,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                     ),
               trailing: [
                 const _SyncMark(),
-                _Account(onPick: compact ? _pick : null),
+                _Account(shelf: _shelf, onPick: compact ? _pick : null),
               ],
               onChanged: (v) => setState(() => _query = v),
             ),
@@ -1042,70 +1042,139 @@ class _BoardFloat extends StandardFabLocation with FabFloatOffsetY {
   int get hashCode => Object.hash(start, end, centered);
 }
 
-/// The account: an avatar in the search bar, with the account and sign-out
-/// in its menu.
+/// The account: an avatar at the search bar's end, and its menu, hung from
+/// the bar's end too. The menu is Expressive's segmented kind: who is
+/// signed in and how the sync stands; on compact windows the shelves that
+/// have no chip; then settings and signing out.
 class _Account extends ConsumerWidget {
-  const _Account({this.onPick});
+  const _Account({required this.shelf, this.onPick});
+  final Shelf shelf;
 
   /// On compact windows, which have no rail: the way to Archive and Trash.
   final void Function(Shelf shelf)? onPick;
+
+  static const _width = 280.0;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final session = ref.watch(sessionProvider).value;
     if (session == null) return const SizedBox.shrink();
-    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final name = session.user.display;
+    final initial = name.isEmpty ? '?' : name.characters.first.toUpperCase();
+    final (icon, state) = _syncState(ref);
     return MenuAnchor(
-      alignmentOffset: const Offset(-160, 8),
-      builder: (context, ctl, _) => IconButton(
-        tooltip: 'Account: $name',
-        onPressed: () => ctl.isOpen ? ctl.close() : ctl.open(),
-        icon: CircleAvatar(
-          radius: 15,
-          backgroundColor: scheme.primaryContainer,
-          foregroundColor: scheme.onPrimaryContainer,
-          child: Text(name.isEmpty ? '?' : name.characters.first.toUpperCase()),
+      style: segmentedMenuStyle,
+      // its end on the search bar's end: the button is 40dp, 8dp in from it
+      alignmentOffset: const Offset(40 + 8 - _width, 12),
+      builder: (context, ctl, _) => SizedBox.square(
+        dimension: 40,
+        child: IconButton(
+          tooltip: 'Account: $name',
+          padding: EdgeInsets.zero,
+          onPressed: () => ctl.isOpen ? ctl.close() : ctl.open(),
+          icon: CircleAvatar(
+            radius: 15,
+            backgroundColor: scheme.primaryContainer,
+            foregroundColor: scheme.onPrimaryContainer,
+            child: Text(initial),
+          ),
         ),
       ),
       menuChildren: [
-        // who is signed in, and where: a header, not something to press
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 16, 8),
-          child: Row(
-            children: [
-              Icon(Icons.account_circle_outlined, size: 20, color: scheme.onSurfaceVariant),
-              const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(name, style: Theme.of(context).textTheme.titleSmall?.copyWith(color: scheme.onSurface)),
-                  Text(
-                    Uri.parse(session.server).host,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+        SizedBox(
+          width: _width,
+          child: SegmentedMenu(
+            groups: [
+              // who is signed in, and where: a header, not something to press
+              [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 20,
+                        backgroundColor: scheme.primaryContainer,
+                        foregroundColor: scheme.onPrimaryContainer,
+                        child: Text(initial, style: theme.textTheme.titleMedium),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.titleMedium?.copyWith(color: scheme.onSurface),
+                            ),
+                            Text(
+                              Uri.parse(session.server).host,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
+                ),
+                // how the sync stands, in words (the bar's mark says it small)
+                Padding(
+                  // its icon over the items' icons below
+                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+                  child: Row(
+                    children: [
+                      Icon(icon, size: 20, color: scheme.onSurfaceVariant),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(state, style: theme.textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant)),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              if (onPick case final pick?)
+                [
+                  for (final s in const [Shelf.archive, Shelf.trash])
+                    SegmentedMenuItem(icon: s.icon, label: s.label, selected: shelf == s, onPressed: () => pick(s)),
                 ],
-              ),
+              [
+                SegmentedMenuItem(
+                  icon: Icons.settings_outlined,
+                  label: 'Settings',
+                  onPressed: () => showSettings(context),
+                ),
+                SegmentedMenuItem(
+                  icon: Icons.logout,
+                  label: 'Sign out',
+                  onPressed: () => ref.read(sessionProvider.notifier).signOut(),
+                ),
+              ],
             ],
           ),
-        ),
-        const Divider(height: 1),
-        if (onPick case final pick?)
-          for (final s in const [Shelf.archive, Shelf.trash])
-            MenuItemButton(leadingIcon: Icon(s.icon), onPressed: () => pick(s), child: Text(s.label)),
-        MenuItemButton(
-          leadingIcon: const Icon(Icons.settings_outlined),
-          onPressed: () => showSettings(context),
-          child: const Text('Settings'),
-        ),
-        MenuItemButton(
-          leadingIcon: const Icon(Icons.logout),
-          onPressed: () => ref.read(sessionProvider.notifier).signOut(),
-          child: const Text('Sign out'),
         ),
       ],
     );
   }
+}
+
+/// The sync's state as an icon and a few words.
+(IconData, String) _syncState(WidgetRef ref) {
+  final status = ref.watch(syncStatusProvider).value;
+  final pending = ref.watch(pendingProvider).value ?? 0;
+  return switch (status?.phase) {
+    SyncPhase.online when pending > 0 => (Icons.cloud_upload_outlined, 'Sending $pending'),
+    SyncPhase.online => (Icons.cloud_done_outlined, 'Up to date'),
+    SyncPhase.offline => (
+      Icons.cloud_off_outlined,
+      'Offline: ${status!.error}${pending > 0 ? ' · $pending waiting' : ''}',
+    ),
+    _ => (Icons.cloud_sync_outlined, 'Connecting'),
+  };
 }
 
 /// Online, sending, or offline, as one quiet icon.
@@ -1114,17 +1183,7 @@ class _SyncMark extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final status = ref.watch(syncStatusProvider).value;
-    final pending = ref.watch(pendingProvider).value ?? 0;
-    final (icon, tip) = switch (status?.phase) {
-      SyncPhase.online when pending > 0 => (Icons.cloud_upload_outlined, 'Sending $pending'),
-      SyncPhase.online => (Icons.cloud_done_outlined, 'Up to date'),
-      SyncPhase.offline => (
-        Icons.cloud_off_outlined,
-        'Offline: ${status!.error}${pending > 0 ? ' · $pending waiting' : ''}',
-      ),
-      _ => (Icons.cloud_sync_outlined, 'Connecting'),
-    };
+    final (icon, tip) = _syncState(ref);
     return Tooltip(
       message: tip,
       child: Padding(

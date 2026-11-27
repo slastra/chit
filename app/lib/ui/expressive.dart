@@ -591,3 +591,117 @@ class SegmentedList extends StatelessWidget {
     );
   }
 }
+
+// ---- segmented menu ------------------------------------------------------------
+
+/// The popup of a segmented menu: nothing of its own, since its groups are
+/// the containers (SegmentedMenuTokens).
+final segmentedMenuStyle = MenuStyle(
+  backgroundColor: const WidgetStatePropertyAll(Colors.transparent),
+  shadowColor: const WidgetStatePropertyAll(Colors.transparent),
+  surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+  elevation: const WidgetStatePropertyAll(0),
+  padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+  shape: WidgetStatePropertyAll(RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+);
+
+/// Expressive's segmented menu: its [groups] as separate containers 2dp
+/// apart, the menu's outer corners large (16dp) and the corners between
+/// groups small (8dp), each group padded 4dp around its items. An item's
+/// corners are extra small (4dp), but medium (12dp) where they meet their
+/// group's rounder end.
+class SegmentedMenu extends StatelessWidget {
+  const SegmentedMenu({super.key, required this.groups});
+  final List<List<Widget>> groups;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    const outer = Radius.circular(16), inner = Radius.circular(8);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: 2,
+      children: [
+        for (final (g, items) in groups.indexed)
+          Material(
+            color: scheme.surfaceContainer,
+            elevation: 3,
+            shadowColor: scheme.shadow,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.vertical(
+                top: g == 0 ? outer : inner,
+                bottom: g == groups.length - 1 ? outer : inner,
+              ),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Padding(
+              padding: const EdgeInsets.all(4),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                spacing: 2,
+                children: [
+                  for (final (i, item) in items.indexed)
+                    _SegmentedMenuPlace(first: i == 0, last: i == items.length - 1, child: item),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Tells a [SegmentedMenuItem] where in its group it is.
+class _SegmentedMenuPlace extends InheritedWidget {
+  const _SegmentedMenuPlace({required this.first, required this.last, required super.child});
+  final bool first;
+  final bool last;
+
+  @override
+  bool updateShouldNotify(_SegmentedMenuPlace old) => old.first != first || old.last != last;
+}
+
+/// An item of a [SegmentedMenu]: 44dp tall, a 20dp icon 12dp from its
+/// body-large label. [selected] (where it is the current place or choice)
+/// puts it on tertiary container, its corners medium all round.
+class SegmentedMenuItem extends StatelessWidget {
+  const SegmentedMenuItem({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+    this.selected = false,
+  });
+  final IconData icon;
+  final String label;
+  final VoidCallback onPressed;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final place = context.dependOnInheritedWidgetOfExactType<_SegmentedMenuPlace>();
+    const snug = Radius.circular(4), round = Radius.circular(12);
+    final ink = selected ? scheme.onTertiaryContainer : null;
+    return MenuItemButton(
+      style: MenuItemButton.styleFrom(
+        backgroundColor: selected ? scheme.tertiaryContainer : null,
+        foregroundColor: ink,
+        iconColor: ink,
+        shape: RoundedRectangleBorder(
+          borderRadius: selected
+              ? const BorderRadius.all(round)
+              : BorderRadius.vertical(
+                  top: (place?.first ?? true) ? round : snug,
+                  bottom: (place?.last ?? true) ? round : snug,
+                ),
+        ),
+      ),
+      leadingIcon: Icon(icon),
+      onPressed: onPressed,
+      child: Text(label),
+    );
+  }
+}
