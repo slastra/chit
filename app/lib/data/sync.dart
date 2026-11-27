@@ -90,15 +90,10 @@ final class SyncEngine {
   Future<void> start() async {
     if (_running) return;
     _running = true;
-    // every clock this replica has seen, so an edit here (a reminder's
-    // Done, say) is never stamped behind another device's
-    final lib = await replica.read();
-    for (final n in lib.notes) {
-      n.clocks.values.forEach(clock.observe);
-    }
-    for (final st in lib.states.values) {
-      st.clocks.values.forEach(clock.observe);
-    }
+    // every clock this replica has seen, in every collection, so an edit
+    // here (a reminder's Done, an item checked) is never stamped behind
+    // another device's
+    (await replica.clocks()).forEach(clock.observe);
     unawaited(_loop());
   }
 
@@ -108,7 +103,7 @@ final class SyncEngine {
     _uploadRetry?.cancel();
     await _progress.close();
     await _sub?.cancel();
-    _wake?.complete();
+    nudge(); // wakes a sleeping loop, which then sees it is not running
     await _status.close();
   }
 
@@ -126,36 +121,43 @@ final class SyncEngine {
         if (await replica.cursor() == 0) await _loadSnapshot();
         _set(SyncPhase.connecting);
         final done = Completer<void>();
-        // asyncMap applies events strictly one after another: an async
-        // listen callback would let two changes race into the replica.
+        void fail(Object e) {
+          if (!done.isCompleted) done.completeError(e);
+          unawaited(_sub?.cancel());
+        }
+
+        // Events are handled strictly one batch after another (two batches
+        // must never race into the replica), and the changes that arrive
+        // together are applied in one transaction: a burst of edits from
+        // another device is one new Library, not one per edit.
+        final pending = <StreamEvent>[];
+        var scheduled = false;
+        var tail = Future<void>.value();
+        void after(FutureOr<void> Function() step) {
+          tail = tail.then((_) => done.isCompleted ? null : step()).catchError(fail);
+        }
+
         _sub = api
             .stream(await replica.cursor())
-            .asyncMap<void>((ev) async {
-              switch (ev) {
-                case OpenEvent():
-                  backoff = const Duration(seconds: 1);
-                  _set(SyncPhase.online);
-                  unawaited(flush());
-                case ChangeEvent(:final seq, :final change):
-                  try {
-                    await onRemoteChange?.call(seq, change);
-                  } catch (_) {
-                    // a notification is never worth the stream
-                  }
-                  await replica.applyChanges([change], seq);
-                  if (change.hlc.isNotEmpty) clock.observe(change.hlc);
-                case CursorEvent(:final seq):
-                  await replica.applyChanges(const [], seq);
-              }
-            })
             .listen(
-              null,
-              onError: (Object e) {
-                if (!done.isCompleted) done.completeError(e);
+              (ev) {
+                pending.add(ev);
+                if (scheduled) return;
+                scheduled = true;
+                after(() async {
+                  // one turn of the event loop: whatever came in the same
+                  // read from the socket joins this batch
+                  await Future<void>(() {});
+                  scheduled = false;
+                  final batch = List.of(pending);
+                  pending.clear();
+                  return _handle(batch, onOpen: () => backoff = const Duration(seconds: 1));
+                });
               },
-              onDone: () {
+              onError: (Object e) => after(() => fail(e)),
+              onDone: () => after(() {
                 if (!done.isCompleted) done.complete();
-              },
+              }),
               cancelOnError: true,
             );
         await done.future;
@@ -173,6 +175,42 @@ final class SyncEngine {
       await Future.any([Future<void>.delayed(backoff), _wake!.future]);
       backoff = Duration(seconds: min(backoff.inSeconds * 2, 15));
     }
+  }
+
+  /// Handles stream events in order, applying each run of changes (and
+  /// the cursor after it) in one transaction. The remote-change hook still
+  /// sees every change, in order, before it is applied.
+  Future<void> _handle(List<StreamEvent> events, {required void Function() onOpen}) async {
+    final changes = <Change>[];
+    var cursor = -1;
+    Future<void> apply() async {
+      if (changes.isEmpty && cursor < 0) return;
+      await replica.applyChanges(List.of(changes), cursor < 0 ? 0 : cursor);
+      changes.clear();
+      cursor = -1;
+    }
+
+    for (final ev in events) {
+      switch (ev) {
+        case OpenEvent():
+          await apply();
+          onOpen();
+          _set(SyncPhase.online);
+          unawaited(flush());
+        case ChangeEvent(:final seq, :final change):
+          try {
+            await onRemoteChange?.call(seq, change);
+          } catch (_) {
+            // a notification is never worth the stream
+          }
+          changes.add(change);
+          cursor = seq;
+          if (change.hlc.isNotEmpty) clock.observe(change.hlc);
+        case CursorEvent(:final seq):
+          cursor = seq;
+      }
+    }
+    await apply();
   }
 
   static String _reason(Object e) => switch (e) {

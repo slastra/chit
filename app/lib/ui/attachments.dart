@@ -276,25 +276,37 @@ class NoteImages extends StatelessWidget {
 }
 
 /// A PDF's first page, small, for its row.
-class PdfFirstPage extends ConsumerWidget {
-  const PdfFirstPage(this.attachment, {super.key, this.width = 40, this.height = 52});
+class PdfFirstPage extends ConsumerStatefulWidget {
+  const PdfFirstPage(this.attachment, {super.key});
   final Attachment attachment;
-  final double width;
-  final double height;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<PdfFirstPage> createState() => _PdfFirstPageState();
+}
+
+class _PdfFirstPageState extends ConsumerState<PdfFirstPage> {
+  // fetched once, not on every rebuild of the row (an upload's progress
+  // rebuilds it many times a second)
+  Future<String?>? _file;
+  Media? _media;
+
+  @override
+  Widget build(BuildContext context) {
     final media = ref.watch(mediaProvider);
     final scheme = Theme.of(context).colorScheme;
     final fallback = Icon(Icons.picture_as_pdf_outlined, color: scheme.onSecondaryContainer);
     Widget frame(Widget child) => ClipRRect(
       borderRadius: BorderRadius.circular(4),
-      child: Container(width: width, height: height, color: scheme.secondaryContainer, child: child),
+      child: Container(width: 40, height: 52, color: scheme.secondaryContainer, child: child),
     );
     if (media == null || !files.hasFiles) return frame(fallback);
+    if (media != _media) {
+      _media = media;
+      _file = media.file(widget.attachment);
+    }
     return frame(
       FutureBuilder(
-        future: media.file(attachment),
+        future: _file,
         builder: (context, snap) => snap.data == null
             ? fallback
             : PdfDocumentViewBuilder.file(

@@ -377,11 +377,10 @@ class _HomePageState extends ConsumerState<HomePage> {
     final pinned = [for (final i in ids.pinned) byId[i]!];
     final others = [for (final i in ids.others) byId[i]!];
     final dragging = _drag.active;
-    // the selection, less anything no longer shown
-    final selected = {
-      for (final id in _selected)
-        if (byId.containsKey(id)) id,
-    };
+    // the selection, less anything no longer shown (another device trashed
+    // it, a filter hid it): kept that way, so every reader agrees
+    _selected.removeWhere((id) => !byId.containsKey(id));
+    final selected = _selected;
     final wide = isExpanded(context);
     final theme = Theme.of(context);
     final firstSync = lib.notes.isEmpty && status?.phase != SyncPhase.online && status?.phase != SyncPhase.offline;
@@ -400,11 +399,11 @@ class _HomePageState extends ConsumerState<HomePage> {
     // the expanded rail holds the new-note button; otherwise it floats
     final showFab =
         !expandedRail &&
-        _selected.isEmpty &&
+        selected.isEmpty &&
         (_shelf == Shelf.notes || _shelf == Shelf.reminders || _shelf == Shelf.labeled);
     // snackbars float above the FAB (56dp and its 16dp margin), or the
     // selection toolbar that takes its place (64dp)
-    snackbarClearance.value = _selected.isNotEmpty ? 64 + 16 : (showFab ? 56 + 16 : 0);
+    snackbarClearance.value = selected.isNotEmpty ? 64 + 16 : (showFab ? 56 + 16 : 0);
     // the pane beside the rail: what the selection toolbar centers in
     final railWidth = compact ? 0.0 : (expandedRail ? NavRail.expandedWidth : NavRail.collapsedWidth);
     final paneWidth = width - railWidth - detail;
@@ -496,6 +495,9 @@ class _HomePageState extends ConsumerState<HomePage> {
     final grid = MenuAnchor(
       key: _cardMenuKey,
       controller: _cardMenu,
+      onClose: () {
+        if (_menuNote != null) setState(() => _menuNote = null);
+      },
       menuChildren: menuIds.isEmpty ? const [] : _noteActions(lib, menuIds, shown, menu: true),
       child: board,
     );
@@ -589,6 +591,9 @@ class _HomePageState extends ConsumerState<HomePage> {
       ],
     );
 
+    // only medium has the modal rail: a resize out of it takes the rail
+    // away without saying it closed
+    if (wide || compact) _railOpen = false;
     final scaffold = Scaffold(
       key: _scaffold,
       onDrawerChanged: (open) => setState(() => _railOpen = open),
@@ -726,11 +731,13 @@ class _HomePageState extends ConsumerState<HomePage> {
   /// What can be done to the notes [ids]: as the selection toolbar's buttons
   /// (at most [fits], the rest under More), or as a [menu]'s items (a right
   /// click on a card).
-  List<Widget> _noteActions(Library lib, List<String> ids, List<Note> shown, {int fits = 0, bool menu = false}) {
+  List<Widget> _noteActions(Library lib, List<String> requested, List<Note> shown, {int fits = 0, bool menu = false}) {
     if (ref.read(engineProvider) == null) return const [];
     final me = ref.read(sessionProvider).value?.user.id ?? '';
-    final notes = [for (final id in ids) ?lib.notes.where((n) => n.id == id).firstOrNull];
+    final notes = [for (final id in requested) ?lib.notes.where((n) => n.id == id).firstOrNull];
     if (notes.isEmpty) return const [];
+    // the notes that still exist: everything below acts on these alone
+    final ids = [for (final n in notes) n.id];
     final owned = [
       for (final n in notes)
         if (n.owner == me) n.id,

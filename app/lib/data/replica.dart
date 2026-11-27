@@ -258,6 +258,13 @@ final class Replica {
   Stream<Library> watch() => db.select(db.records).watch().map(Library.fromRows);
 
   Future<Library> read() async => Library.fromRows(await db.select(db.records).get());
+
+  /// Every clock on every record, deleted ones too: what a fresh clock must
+  /// not fall behind.
+  Future<Iterable<String>> clocks() async => [
+    for (final r in await db.select(db.records).get())
+      ...((((decodeJson(r.data) as Map?)?['clocks'] as Map?) ?? const {}).values.whereType<String>()),
+  ];
 }
 
 /// Folds a whole incoming record into the local one. Fields with clocks keep

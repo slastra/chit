@@ -368,78 +368,82 @@ class _VideoViewState extends ConsumerState<VideoView> {
                     opacity: _shown ? 1 : 0,
                     duration: Durations.medium2,
                     curve: Easing.standard,
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        Center(
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            spacing: 24,
-                            children: [
-                              IconButton(
-                                tooltip: 'Back 10 seconds',
-                                color: Colors.white,
-                                style: iconButtonSize(56, 32),
-                                onPressed: mine ? () => _skip(-10) : null,
-                                icon: const Icon(Icons.replay_10_rounded),
-                              ),
-                              // while it is fetched, the loading indicator
-                              // in the play button's place
-                              ValueListenableBuilder(
-                                valueListenable: deck.loading,
-                                builder: (context, loading, _) => mine && loading != null
-                                    ? const LoadingIndicator(size: 96, contained: true)
-                                    : IconButton.filled(
-                                        tooltip: playing ? 'Pause' : 'Play',
-                                        style: iconButtonSize(96, 32),
-                                        onPressed: () => togglePlayback(ref, a),
-                                        icon: Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded),
-                                      ),
-                              ),
-                              IconButton(
-                                tooltip: 'Forward 10 seconds',
-                                color: Colors.white,
-                                style: iconButtonSize(56, 32),
-                                onPressed: mine ? () => _skip(10) : null,
-                                icon: const Icon(Icons.forward_10_rounded),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Positioned(
-                          left: 0,
-                          right: 0,
-                          bottom: 0,
-                          child: DecoratedBox(
-                            decoration: const BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: [Color(0x00000000), Color(0xB3000000)],
-                              ),
-                            ),
-                            child: SafeArea(
-                              top: false,
-                              child: Padding(
-                                padding: const EdgeInsets.fromLTRB(16, 32, 16, 8),
-                                // how far the fetch is, where the seek bar
-                                // will be
-                                child: ValueListenableBuilder(
+                    child: TickerMode(
+                      // hidden, the seek bar's wave stops too
+                      enabled: _shown,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          Center(
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              spacing: 24,
+                              children: [
+                                IconButton(
+                                  tooltip: 'Back 10 seconds',
+                                  color: Colors.white,
+                                  style: iconButtonSize(56, 32),
+                                  onPressed: mine ? () => _skip(-10) : null,
+                                  icon: const Icon(Icons.replay_10_rounded),
+                                ),
+                                // while it is fetched, the loading indicator
+                                // in the play button's place
+                                ValueListenableBuilder(
                                   valueListenable: deck.loading,
-                                  builder: (context, loading, _) => !mine
-                                      ? const SizedBox(height: 48)
-                                      : loading != null
-                                      ? SizedBox(
-                                          height: 48,
-                                          child: Center(child: WavyProgress(value: loading == 0 ? null : loading)),
-                                        )
-                                      : SeekBar(player: deck.player, color: Colors.white),
+                                  builder: (context, loading, _) => mine && loading != null
+                                      ? const LoadingIndicator(size: 96, contained: true)
+                                      : IconButton.filled(
+                                          tooltip: playing ? 'Pause' : 'Play',
+                                          style: iconButtonSize(96, 32),
+                                          onPressed: () => togglePlayback(ref, a),
+                                          icon: Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded),
+                                        ),
+                                ),
+                                IconButton(
+                                  tooltip: 'Forward 10 seconds',
+                                  color: Colors.white,
+                                  style: iconButtonSize(56, 32),
+                                  onPressed: mine ? () => _skip(10) : null,
+                                  icon: const Icon(Icons.forward_10_rounded),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Positioned(
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            child: DecoratedBox(
+                              decoration: const BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [Color(0x00000000), Color(0xB3000000)],
+                                ),
+                              ),
+                              child: SafeArea(
+                                top: false,
+                                child: Padding(
+                                  padding: const EdgeInsets.fromLTRB(16, 32, 16, 8),
+                                  // how far the fetch is, where the seek bar
+                                  // will be
+                                  child: ValueListenableBuilder(
+                                    valueListenable: deck.loading,
+                                    builder: (context, loading, _) => !mine
+                                        ? const SizedBox(height: 48)
+                                        : loading != null
+                                        ? SizedBox(
+                                            height: 48,
+                                            child: Center(child: WavyProgress(value: loading == 0 ? null : loading)),
+                                          )
+                                        : SeekBar(player: deck.player, color: Colors.white),
+                                  ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),

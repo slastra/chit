@@ -89,11 +89,19 @@ final class SessionNotifier extends AsyncNotifier<Session?> {
   }
 }
 
+/// Who is signed in where, without the token: what the engine and the
+/// people list are for. A refreshed token changes the session but not
+/// this, so neither starts over (the engine keeps its own token current).
+final _account = Provider<({String server, String user, String device})?>((ref) {
+  final s = ref.watch(sessionProvider).value;
+  return s == null ? null : (server: s.server, user: s.user.id, device: s.device);
+});
+
 /// The sync engine for the current session; replaced on sign-in, stopped
 /// on sign-out.
 final engineProvider = Provider<SyncEngine?>((ref) {
-  final session = ref.watch(sessionProvider).value;
-  if (session == null) return null;
+  if (ref.watch(_account) == null) return null;
+  final session = ref.read(sessionProvider).value!;
   final engine = SyncEngine(
     replica: ref.watch(replicaProvider),
     api: ChitApi(server: session.server, token: session.token, device: session.device),
@@ -170,8 +178,8 @@ final pendingProvider = StreamProvider<int>((ref) => ref.watch(replicaProvider).
 
 /// The accounts on the server, for names and sharing.
 final peopleProvider = FutureProvider<List<Person>>((ref) async {
-  final session = ref.watch(sessionProvider).value;
-  if (session == null) return const [];
+  if (ref.watch(_account) == null) return const [];
+  final session = ref.read(sessionProvider).value!;
   final api = ChitApi(server: session.server, token: session.token);
   try {
     return await api.people();
